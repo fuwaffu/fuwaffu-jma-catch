@@ -53,10 +53,15 @@ async function run() {
          }
       }
 
-      if (prefecture.includes('地方') && !prefecture.includes('東京')) prefecture = '北海道';
-      else if (prefecture.includes('沖縄') || prefecture.includes('大東島') || prefecture.includes('宮古島') || prefecture.includes('八重山')) prefecture = '沖縄県';
-      else if (prefecture.includes('奄美') || prefecture.includes('鹿児島')) prefecture = '鹿児島県';
-      else if (prefecture === '東京地方') prefecture = '東京都';
+      if (prefecture.includes('地方') && (prefecture.includes('宗谷') || prefecture.includes('上川') || prefecture.includes('留萌') || prefecture.includes('網走') || prefecture.includes('北見') || prefecture.includes('紋別') || prefecture.includes('十勝') || prefecture.includes('釧路') || prefecture.includes('根室') || prefecture.includes('胆振') || prefecture.includes('日高') || prefecture.includes('石狩') || prefecture.includes('空知') || prefecture.includes('後志') || prefecture.includes('渡島') || prefecture.includes('檜山'))) {
+        prefecture = '北海道';
+      } else if (prefecture.includes('沖縄') || prefecture.includes('大東島') || prefecture.includes('宮古島') || prefecture.includes('八重山')) {
+        prefecture = '沖縄県';
+      } else if (prefecture.includes('奄美') || prefecture.includes('鹿児島')) {
+        prefecture = '鹿児島県';
+      } else if (prefecture === '東京地方') {
+        prefecture = '東京都';
+      }
 
       const warnings = Array.isArray(report.Body.Warning) ? report.Body.Warning : [report.Body.Warning];
       for (const warning of warnings) {
