@@ -11,13 +11,13 @@
 
 ## アーキテクチャ
 
-1. **バックエンド (`backend-v2/`)**:
+1. **バックエンド (`backend/`)**:
    - Cloudflare Workers上で稼働し、CRONトリガー（5分間隔）で気象庁のXMLフィード (`extra.xml` / `extra_l.xml`) を監視します。
    - JMAルール（1日10GB）を厳守するため、一度取得したXMLはキャッシュし重複ダウンロードを防止しています。
    - 取得したXMLデータは `fast-xml-parser` でJSONにパースされます。警報（VPWW）受信時は、XMLを「正」として地域単位で古いデータを破棄し、新しいXMLの内容で完全置換（上書き）します。これにより「解除」された警報も正確に消去されます。
    - フロントエンドからのAPIリクエストに対して、KV上のデータをキャッシュしつつ超高速に返却します。
 
-2. **フロントエンド (`frontend-v2/`)**:
+2. **フロントエンド (`frontend/`)**:
    - React + Vite で構築されたシングルページアプリケーション（SPA）です。
    - バックエンドのAPIからデータを取得し、状態に応じて警報や地震のリストをレンダリングします。
    - Cloudflare Pages にデプロイされています。
@@ -30,41 +30,48 @@
 - Cloudflare アカウント（Wrangler CLI）
 
 ### バックエンドの起動
-1. `backend-v2` ディレクトリに移動します。
+1. `backend` ディレクトリに移動します。
    `ash
-   cd backend-v2
+   cd backend
    npm install
-   ``n2. （初回のみ）Cloudflareにログインし、KV名前空間を作成します。
+   ``
+2. （初回のみ）Cloudflareにログインし、KV名前空間を作成します。
    `ash
    npx wrangler login
    npx wrangler kv:namespace create WEATHER_DATA_STORE
-   ``n   作成されたIDを `wrangler.toml` の `id` フィールドに設定してください。
+   ``
+   作成されたIDを `wrangler.toml` の `id` フィールドに設定してください。
 3. ローカルサーバーを起動します。
    `ash
    npm start
-   ``n
+   ``
+
 ### フロントエンドの起動
-1. `frontend-v2` ディレクトリに移動します。
+1. `frontend` ディレクトリに移動します。
    `ash
-   cd frontend-v2
+   cd frontend
    npm install
-   ``n2. 開発用サーバーを起動します。
+   ``
+2. 開発用サーバーを起動します。
    `ash
    npm run dev
-   ``n3. ブラウザで `http://localhost:5173` にアクセスします。
+   ``
+3. ブラウザで `http://localhost:5173` にアクセスします。
 
 ## デプロイ
 
 ### バックエンド (Cloudflare Workers)
 `ash
-cd backend-v2
+cd backend
 npx wrangler deploy
-``n
+``
+
 ### フロントエンド (Cloudflare Pages)
 `ash
-cd frontend-v2
+cd frontend
 npm run build
 npx wrangler pages deploy dist --project-name=jma-dashboard-viewer --branch=main
-``n
+``
+
 ## ライセンス
 MIT License
