@@ -250,16 +250,16 @@ export default {
       prefecture = OFFICE_CODE_TO_PREF[idMatch[1]] || '';
     }
     
-    // 取得できなかった場合のフォールバック（旧ロジックの一部を残す）
-    if (!prefecture) {
+    // 取得できなかった場合、または「北海道」と大まかに判定された場合はTitleから詳細な地域名を取得
+    if (!prefecture || prefecture === '北海道') {
       const title = report.Head?.Title || '';
       const titleWithoutParen = title.replace(/（[^）]+）/, '');
       const prefMatch = titleWithoutParen.match(/^(.+地方|.+県|.+府|北海道|東京都)/);
-      prefecture = prefMatch ? prefMatch[1] : '';
+      if (prefMatch) {
+        prefecture = prefMatch[1];
+      }
 
-      if (prefecture.includes('地方') && (prefecture.includes('宗谷') || prefecture.includes('上川') || prefecture.includes('留萌') || prefecture.includes('網走') || prefecture.includes('北見') || prefecture.includes('紋別') || prefecture.includes('十勝') || prefecture.includes('釧路') || prefecture.includes('根室') || prefecture.includes('胆振') || prefecture.includes('日高') || prefecture.includes('石狩') || prefecture.includes('空知') || prefecture.includes('後志') || prefecture.includes('渡島') || prefecture.includes('檜山'))) {
-        prefecture = '北海道';
-      } else if (prefecture.includes('沖縄') || prefecture.includes('大東島') || prefecture.includes('宮古島') || prefecture.includes('八重山')) {
+      if (prefecture.includes('沖縄') || prefecture.includes('大東島') || prefecture.includes('宮古島') || prefecture.includes('八重山')) {
         prefecture = '沖縄県';
       } else if (prefecture.includes('奄美') || prefecture.includes('鹿児島')) {
         prefecture = '鹿児島県';
