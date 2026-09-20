@@ -160,8 +160,27 @@ export default {
         if (!feed.feed || !feed.feed.entry) continue;
 
         const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
-        
-        const candidateEntries = entries.filter((e: any) => e.id).slice(0, 60);
+        let candidateEntries = entries.filter((e: any) => {
+          if (!e.id) return false;
+          const link = e.link?.['@_href'] || '';
+          return link.match(/_VPWW(5[3-9]|6[0-1])_/) || 
+                 link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
+                 link.includes('_VPTW6') || link.includes('_VPTI5');
+        });
+
+        if (isInitialSync) {
+            const typhoons = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPTW'));
+            const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
+            const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPWW'));
+            
+            candidateEntries = [
+                ...typhoons.slice(0, 2),
+                ...earthquakes.slice(0, 10),
+                ...warnings.slice(0, MAX_SUBREQUESTS - 12)
+            ].sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
+        } else {
+            candidateEntries = candidateEntries.slice(0, 150);
+        }
 
         const newEntries = [];
         for (const entry of candidateEntries) {
