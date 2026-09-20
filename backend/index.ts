@@ -216,7 +216,8 @@ export default {
             this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
             dataUpdated = true;
           } else if (telegramCode === 'VPTW') {
-            // Typhoon parsing skipped as per original
+            this.processTyphoonToMemory(report, id, updated, typhoonsData);
+            dataUpdated = true;
           }
         }
       } catch (e) {
@@ -231,6 +232,7 @@ export default {
       // データストアに反映
       await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
       await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
+      await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
       await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
       await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
       
@@ -381,6 +383,49 @@ export default {
         if (earthquakesData.length > 200) {
           earthquakesData.shift(); // 古いものを削除
         }
+      }
+    }
+  },
+
+  processTyphoonToMemory(report: any, xmlId: string, updated: string, typhoonsData: any[]) {
+    const infos = report.Body?.MeteorologicalInfos;
+    if (!infos) return;
+
+    const items = Array.isArray(infos.MeteorologicalInfo) ? infos.MeteorologicalInfo : (infos.MeteorologicalInfo ? [infos.MeteorologicalInfo] : []);
+    
+    let tcNumber = '';
+    let name = '';
+    
+    for (const info of items) {
+      if (info.Item && info.Item.Kind) {
+        const kinds = Array.isArray(info.Item.Kind) ? info.Item.Kind : [info.Item.Kind];
+        for (const kind of kinds) {
+          if (kind.Property && kind.Property.TyphoonNamePart) {
+            tcNumber = kind.Property.TyphoonNamePart.Number || tcNumber;
+            name = kind.Property.TyphoonNamePart.NameKana || kind.Property.TyphoonNamePart.Name || name;
+          }
+        }
+      }
+    }
+
+    if (tcNumber) {
+      if (!name) name = '熱帯低気圧';
+      
+      for (let i = typhoonsData.length - 1; i >= 0; i--) {
+        if (typhoonsData[i].tcNumber === tcNumber) {
+          typhoonsData.splice(i, 1);
+        }
+      }
+      
+      typhoonsData.push({
+        xmlId,
+        tcNumber,
+        name,
+        updatedAt: updated
+      });
+      
+      if (typhoonsData.length > 20) {
+        typhoonsData.shift();
       }
     }
   },
