@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 
@@ -10,6 +10,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
 
   const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('prefecture');
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
@@ -242,10 +243,11 @@ export default function App() {
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>最大震度</th>
                     </tr>
                   )}
-                  {activeTab === 'typhoons' && (
+                  {activeTab === 'typhoons' && !selectedTyphoon && (
                     <tr style={{ color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>台風番号</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>名前</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>台風名</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>強さ / 大きさ</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>中心気圧</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>更新日時</th>
                     </tr>
                   )}
@@ -385,16 +387,30 @@ export default function App() {
                       </tr>
                       );
                     })}
-                  {activeTab === 'typhoons' && typhoons.map((ty, index) => (
+                  {activeTab === 'typhoons' && !selectedTyphoon && typhoons.map((ty, index) => {
+                    const num = String(ty.tcNumber);
+                    const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
+                    const displayName = `台風${typhoonNum}号（${ty.name}）`;
+                    const intensityText = [ty.current?.intensityClass, ty.current?.areaClass].filter(Boolean).join(' / ') || '—';
+                    return (
                     <tr key={ty.tcNumber || index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                     >
-                      <td style={{ padding: '12px 16px', color: '#64748b' }}>{ty.tcNumber}</td>
-                      <td style={{ padding: '12px 16px', fontWeight: 500, color: '#1e293b' }}>{ty.name}</td>
+                      <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1d4ed8', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#93c5fd', textUnderlineOffset: '4px' }}
+                        onClick={() => setSelectedTyphoon(ty)}
+                      >{displayName}</td>
+                      <td style={{ padding: '12px 16px', color: '#1e293b' }}>{intensityText}</td>
+                      <td style={{ padding: '12px 16px', color: '#1e293b' }}>{ty.current?.pressure ? `${ty.current.pressure} hPa` : '—'}</td>
                       <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(ty.updatedAt).toLocaleString()}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
+                  {activeTab === 'typhoons' && selectedTyphoon && (
+                    <tr><td colSpan={4} style={{ padding: 0 }}>
+                      <TyphoonDetailView typhoon={selectedTyphoon} onBack={() => setSelectedTyphoon(null)} />
+                    </td></tr>
+                  )}
                   
                   {!loading && (
                     (activeTab === 'warnings' && warnings.length === 0) ||
@@ -421,6 +437,227 @@ export default function App() {
         </main>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// === 台風詳細ビュー（Leaflet地図＋情報パネル） ===
+function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => void }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+
+  const num = String(typhoon.tcNumber);
+  const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : typhoon.tcNumber;
+  const displayName = `台風${typhoonNum}号（${typhoon.name}）`;
+  const cur = typhoon.current || {};
+
+  // 「○日午前/午後○時」形式のフォーマッター
+  function formatForecastTime(isoStr: string): string {
+    try {
+      const d = new Date(isoStr);
+      const day = d.getDate();
+      const hour = d.getHours();
+      if (hour === 0) return `${day}日午前0時`;
+      if (hour < 12) return `${day}日午前${hour}時`;
+      if (hour === 12) return `${day}日午後0時`;
+      return `${day}日午後${hour - 12}時`;
+    } catch { return isoStr; }
+  }
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+
+    // Leaflet CSS
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => {
+      const L = (window as any).L;
+      if (!L || !mapRef.current) return;
+
+      const lat = cur.lat || 30;
+      const lon = cur.lon || 135;
+      const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
+      mapInstanceRef.current = map;
+
+      L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
+        maxZoom: 18,
+      }).addTo(map);
+
+      // 台風マーカー（現在位置）
+      const typhoonIcon = L.divIcon({
+        html: '<div style="font-size:28px;text-align:center;line-height:1;">🌀</div>',
+        iconSize: [32, 32], iconAnchor: [16, 16], className: '',
+      });
+      L.marker([lat, lon], { icon: typhoonIcon }).addTo(map)
+        .bindPopup(`<b>${displayName}</b><br>${cur.location || ''}<br>${cur.pressure}hPa / 最大風速${cur.maxWind}m/s`);
+
+      // 強風域（黄色半透明）
+      if (cur.galeRadii && cur.galeRadii.length > 0) {
+        const maxGale = Math.max(...cur.galeRadii.map((r: any) => r.radiusKm || 0));
+        if (maxGale > 0) {
+          L.circle([lat, lon], { radius: maxGale * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+        }
+      }
+
+      // 暴風域（赤半透明）
+      if (cur.stormRadii && cur.stormRadii.length > 0) {
+        const maxStorm = Math.max(...cur.stormRadii.map((r: any) => r.radiusKm || 0));
+        if (maxStorm > 0) {
+          L.circle([lat, lon], { radius: maxStorm * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
+        }
+      }
+
+      // 予報進路（点線）と予報円
+      const trackPoints: [number, number][] = [[lat, lon]];
+      const forecasts = typhoon.forecasts || [];
+
+      forecasts.forEach((fc: any, idx: number) => {
+        if (!fc.lat || !fc.lon) return;
+        trackPoints.push([fc.lat, fc.lon]);
+
+        // 予報円（白点線）
+        if (fc.circleRadiusKm > 0) {
+          L.circle([fc.lat, fc.lon], {
+            radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: '#aaa', fillOpacity: 0.08, weight: 1.5, dashArray: '6,4',
+          }).addTo(map);
+        }
+
+        // 予報円の中心にマーカー
+        const fcIcon = L.divIcon({
+          html: '<div style="width:8px;height:8px;background:#555;border-radius:50%;border:1px solid #fff;"></div>',
+          iconSize: [8, 8], iconAnchor: [4, 4], className: '',
+        });
+        L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
+
+        // 時刻ラベル：円の中心から線を延ばして表示
+        const timeLabel = formatForecastTime(fc.dateTime);
+        // 交互に北東/南東に配置して重ならないようにする
+        const angle = (idx % 2 === 0) ? -45 : 45; // 度
+        const labelOffsetKm = (fc.circleRadiusKm || 50) + 40; // 円の外側に配置
+        const rad = angle * Math.PI / 180;
+        const dLat = (labelOffsetKm / 111) * Math.cos(rad);
+        const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
+        const labelLat = fc.lat + dLat;
+        const labelLon = fc.lon + dLon;
+
+        // 引き出し線
+        L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
+          color: '#666', weight: 1, dashArray: '3,3', opacity: 0.7,
+        }).addTo(map);
+
+        // 時刻ラベル
+        const labelIcon = L.divIcon({
+          html: `<div style="background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${timeLabel}</div>`,
+          iconSize: [0, 0], iconAnchor: [0, 10], className: '',
+        });
+        L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
+      });
+
+      // 進路線
+      if (trackPoints.length > 1) {
+        L.polyline(trackPoints, { color: '#333', weight: 2, dashArray: '8,6', opacity: 0.8 }).addTo(map);
+      }
+
+      // 全体が見えるようにフィット
+      if (trackPoints.length > 1) {
+        map.fitBounds(L.latLngBounds(trackPoints).pad(0.3));
+      }
+    };
+
+    if ((window as any).L) {
+      script.onload(new Event('load'));
+    } else {
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  return (
+    <div style={{ padding: '0' }}>
+      {/* ヘッダー */}
+      <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <button onClick={onBack} style={{ padding: '6px 14px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>← 一覧に戻る</button>
+        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>🌀 {displayName}</h2>
+        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>更新: {new Date(typhoon.updatedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span>
+      </div>
+
+      {/* 地図 */}
+      <div ref={mapRef} style={{ width: '100%', height: '450px', backgroundColor: '#e2e8f0' }} />
+
+      {/* 情報パネル */}
+      <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+        <InfoCard label="階級" value={cur.typhoonClass || '—'} />
+        <InfoCard label="強さ" value={cur.intensityClass || '—'} />
+        <InfoCard label="大きさ" value={cur.areaClass || '—'} />
+        <InfoCard label="中心気圧" value={cur.pressure ? `${cur.pressure} hPa` : '—'} />
+        <InfoCard label="最大風速" value={cur.maxWind ? `${cur.maxWind} m/s` : '—'} />
+        <InfoCard label="最大瞬間風速" value={cur.gustWind ? `${cur.gustWind} m/s` : '—'} />
+        <InfoCard label="現在位置" value={cur.location || '—'} />
+        <InfoCard label="進行方向" value={cur.direction ? `${cur.direction} ${cur.speedKmh}km/h` : '—'} />
+      </div>
+
+      {/* 予報テーブル */}
+      {typhoon.forecasts && typhoon.forecasts.length > 0 && (
+        <div style={{ padding: '0 20px 20px' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b', margin: '0 0 12px 0' }}>進路予報</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <thead><tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'left', color: '#475569' }}>予報時刻</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'left', color: '#475569' }}>階級</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'left', color: '#475569' }}>気圧</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'left', color: '#475569' }}>最大風速</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'left', color: '#475569' }}>位置</th>
+            </tr></thead>
+            <tbody>
+              {typhoon.forecasts.map((fc: any, i: number) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px 12px', color: '#1e293b', fontWeight: 500 }}>{formatForecastTime(fc.dateTime)}</td>
+                  <td style={{ padding: '8px 12px', color: '#475569' }}>{fc.typhoonClass || '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#475569' }}>{fc.pressure ? `${fc.pressure} hPa` : '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#475569' }}>{fc.maxWind ? `${fc.maxWind} m/s` : '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#475569' }}>{fc.location || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  function formatForecastTime(isoStr: string): string {
+    try {
+      const d = new Date(isoStr);
+      const day = d.getDate();
+      const hour = d.getHours();
+      if (hour === 0) return `${day}日午前0時`;
+      if (hour < 12) return `${day}日午前${hour}時`;
+      if (hour === 12) return `${day}日午後0時`;
+      return `${day}日午後${hour - 12}時`;
+    } catch { return isoStr; }
+  }
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+      <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>{label}</div>
+      <div style={{ fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>{value}</div>
     </div>
   );
 }
