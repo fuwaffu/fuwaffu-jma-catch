@@ -480,10 +480,11 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
     mapInstanceRef.current = map;
 
-    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
-      maxZoom: 18,
-    }).addTo(map);
+      maxZoom: 14,
+      className: 'gsi-blank-dark'
+    }).addTo(mapInstanceRef.current);
 
     // 台風マーカー（現在位置）を「×」印に
     const typhoonIcon = L.divIcon({
