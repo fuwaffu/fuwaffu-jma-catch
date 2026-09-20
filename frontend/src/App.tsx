@@ -497,19 +497,18 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
     const forecasts = typhoon.forecasts || [];
     const trackPoints: [number, number][] = [[lat, lon]];
     
-    // 全ポイント（現在地＋予報）を配列に
-    const allPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
-    
-    if (allPoints.length > 1) {
+    // ポリゴン生成ヘルパー
+    const getPolygonPoints = (points: { lat: number, lon: number, r: number }[]) => {
+      if (points.length <= 1) return [];
       const conePointsLeft: [number, number][] = [];
       const conePointsRight: [number, number][] = [];
       
-      for (let i = 0; i < allPoints.length; i++) {
-        const p = allPoints[i];
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
         if (!p.lat || !p.lon) continue;
         
-        const pNext = allPoints[i + 1];
-        const pPrev = allPoints[i - 1];
+        const pNext = points[i + 1];
+        const pPrev = points[i - 1];
         
         let dx1 = 0, dy1 = 0, dx2 = 0, dy2 = 0;
         
@@ -539,13 +538,33 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
         let rightLon = p.lon + (p.r * Math.cos(thetaRight) / (111 * Math.cos(p.lat * Math.PI / 180)));
         
         conePointsLeft.push([leftLat, leftLon]);
-        conePointsRight.unshift([rightLat, rightLon]); // 逆順で結合してポリゴンを閉じる
+        conePointsRight.unshift([rightLat, rightLon]);
       }
-      
-      const polygonPoints = [...conePointsLeft, ...conePointsRight];
-      L.polygon(polygonPoints, {
-        color: '#fff', fillColor: '#fff', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5'
-      }).addTo(map);
+      return [...conePointsLeft, ...conePointsRight];
+    };
+
+    // 白色の予報円（Cone of uncertainty）
+    const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
+    const forecastPolygon = getPolygonPoints(forecastPoints);
+    if (forecastPolygon.length > 0) {
+      L.polygon(forecastPolygon, { color: '#fff', fillColor: '#fff', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+    }
+
+    // 赤色の暴風警戒域（Cone of storm warning area）
+    const getStormR = (radii: any[]) => radii && radii.length > 0 ? Math.max(...radii.map(r => r.radiusKm || 0)) : 0;
+    const curStormR = getStormR(cur.stormRadii);
+    const stormPointsRaw = [{ lat, lon, r: curStormR }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: getStormR(f.stormRadii) }))];
+    
+    if (stormPointsRaw.some(p => p.r > 0)) {
+      const validStormPoints = [];
+      for (const p of stormPointsRaw) {
+        validStormPoints.push(p);
+        if (p.r === 0) break; // 暴風域がなくなる最初のポイントで結んで終了
+      }
+      const stormPolygon = getPolygonPoints(validStormPoints);
+      if (stormPolygon.length > 0) {
+        L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+      }
     }
 
     // 強風域（黄色半透明）
