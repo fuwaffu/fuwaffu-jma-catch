@@ -583,6 +583,22 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
+      // 予報の強風域（黄色半透明）
+      if (fc.galeRadii && fc.galeRadii.length > 0) {
+        const maxGale = Math.max(...fc.galeRadii.map((r: any) => r.radiusKm || 0));
+        if (maxGale > 0) {
+          L.circle([fc.lat, fc.lon], { radius: maxGale * 1000, color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
+        }
+      }
+
+      // 予報の暴風域（赤半透明）
+      if (fc.stormRadii && fc.stormRadii.length > 0) {
+        const maxStorm = Math.max(...fc.stormRadii.map((r: any) => r.radiusKm || 0));
+        if (maxStorm > 0) {
+          L.circle([fc.lat, fc.lon], { radius: maxStorm * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+        }
+      }
+
       // 時刻ラベル：円の中心から線を延ばして表示
       const timeLabel = formatForecastTime(fc.dateTime);
       
