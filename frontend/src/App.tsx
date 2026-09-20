@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 
@@ -467,116 +469,145 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    // Leaflet CSS
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
+    const lat = cur.lat || 30;
+    const lon = cur.lon || 135;
+    const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
+    mapInstanceRef.current = map;
+
+    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
+      maxZoom: 18,
+    }).addTo(map);
+
+    // 台風マーカー（現在位置）を「×」印に
+    const typhoonIcon = L.divIcon({
+      html: '<div style="font-size:24px;text-align:center;line-height:1;color:#FF2800;font-weight:bold;text-shadow:1px 1px 0 #fff,-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff;">×</div>',
+      iconSize: [24, 24], iconAnchor: [12, 12], className: '',
+    });
+    L.marker([lat, lon], { icon: typhoonIcon }).addTo(map)
+      .bindPopup(`<b>${displayName}</b><br>${cur.location || ''}<br>${cur.pressure}hPa / 最大風速${cur.maxWind}m/s`);
+
+    // 予報円をつなぐ「予報円の接線を結んだ領域（扇形/コーン）」を描画
+    const forecasts = typhoon.forecasts || [];
+    const trackPoints: [number, number][] = [[lat, lon]];
+    
+    // 全ポイント（現在地＋予報）を配列に
+    const allPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
+    
+    if (allPoints.length > 1) {
+      const conePointsLeft: [number, number][] = [];
+      const conePointsRight: [number, number][] = [];
+      
+      for (let i = 0; i < allPoints.length; i++) {
+        const p = allPoints[i];
+        if (!p.lat || !p.lon) continue;
+        
+        const pNext = allPoints[i + 1];
+        const pPrev = allPoints[i - 1];
+        
+        let dx1 = 0, dy1 = 0, dx2 = 0, dy2 = 0;
+        
+        if (pNext) {
+          dx1 = (pNext.lon - p.lon) * Math.cos(p.lat * Math.PI / 180);
+          dy1 = pNext.lat - p.lat;
+        }
+        if (pPrev) {
+          dx2 = (p.lon - pPrev.lon) * Math.cos(p.lat * Math.PI / 180);
+          dy2 = p.lat - pPrev.lat;
+        }
+        
+        let dx = (dx1 + dx2) / 2;
+        let dy = (dy1 + dy2) / 2;
+        if (!pPrev) { dx = dx1; dy = dy1; }
+        if (!pNext) { dx = dx2; dy = dy2; }
+        
+        let theta = Math.atan2(dy, dx);
+        
+        let thetaLeft = theta + Math.PI / 2;
+        let thetaRight = theta - Math.PI / 2;
+        
+        let leftLat = p.lat + (p.r * Math.sin(thetaLeft) / 111);
+        let leftLon = p.lon + (p.r * Math.cos(thetaLeft) / (111 * Math.cos(p.lat * Math.PI / 180)));
+        
+        let rightLat = p.lat + (p.r * Math.sin(thetaRight) / 111);
+        let rightLon = p.lon + (p.r * Math.cos(thetaRight) / (111 * Math.cos(p.lat * Math.PI / 180)));
+        
+        conePointsLeft.push([leftLat, leftLon]);
+        conePointsRight.unshift([rightLat, rightLon]); // 逆順で結合してポリゴンを閉じる
+      }
+      
+      const polygonPoints = [...conePointsLeft, ...conePointsRight];
+      L.polygon(polygonPoints, {
+        color: '#fff', fillColor: '#fff', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5'
+      }).addTo(map);
     }
 
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = () => {
-      const L = (window as any).L;
-      if (!L || !mapRef.current) return;
+    // 強風域（黄色半透明）
+    if (cur.galeRadii && cur.galeRadii.length > 0) {
+      const maxGale = Math.max(...cur.galeRadii.map((r: any) => r.radiusKm || 0));
+      if (maxGale > 0) {
+        L.circle([lat, lon], { radius: maxGale * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+      }
+    }
 
-      const lat = cur.lat || 30;
-      const lon = cur.lon || 135;
-      const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
-      mapInstanceRef.current = map;
+    // 暴風域（赤半透明）
+    if (cur.stormRadii && cur.stormRadii.length > 0) {
+      const maxStorm = Math.max(...cur.stormRadii.map((r: any) => r.radiusKm || 0));
+      if (maxStorm > 0) {
+        L.circle([lat, lon], { radius: maxStorm * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
+      }
+    }
 
-      L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
-        maxZoom: 18,
+    // 予報進路（点線）と予報円
+    forecasts.forEach((fc: any, idx: number) => {
+      if (!fc.lat || !fc.lon) return;
+      trackPoints.push([fc.lat, fc.lon]);
+
+      // 予報円（白点線）
+      if (fc.circleRadiusKm > 0) {
+        L.circle([fc.lat, fc.lon], {
+          radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '6,4',
+        }).addTo(map);
+      }
+
+      // 予報円の中心にマーカー
+      const fcIcon = L.divIcon({
+        html: '<div style="width:8px;height:8px;background:#555;border-radius:50%;border:1px solid #fff;"></div>',
+        iconSize: [8, 8], iconAnchor: [4, 4], className: '',
+      });
+      L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
+
+      // 時刻ラベル：円の中心から線を延ばして表示
+      const timeLabel = formatForecastTime(fc.dateTime);
+      const angle = (idx % 2 === 0) ? -45 : 45; // 度
+      const labelOffsetKm = (fc.circleRadiusKm || 50) + 60; // 円の外側に配置
+      const rad = angle * Math.PI / 180;
+      const dLat = (labelOffsetKm / 111) * Math.cos(rad);
+      const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
+      const labelLat = fc.lat + dLat;
+      const labelLon = fc.lon + dLon;
+
+      // 引き出し線
+      L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
+        color: '#666', weight: 1.5, opacity: 0.8, dashArray: '2,2'
       }).addTo(map);
 
-      // 台風マーカー（現在位置）
-      const typhoonIcon = L.divIcon({
-        html: '<div style="font-size:28px;text-align:center;line-height:1;">🌀</div>',
-        iconSize: [32, 32], iconAnchor: [16, 16], className: '',
+      // 時刻ラベル
+      const labelIcon = L.divIcon({
+        html: `<div style="background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${timeLabel}</div>`,
+        iconSize: [0, 0], iconAnchor: [0, 10], className: '',
       });
-      L.marker([lat, lon], { icon: typhoonIcon }).addTo(map)
-        .bindPopup(`<b>${displayName}</b><br>${cur.location || ''}<br>${cur.pressure}hPa / 最大風速${cur.maxWind}m/s`);
+      L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
+    });
 
-      // 強風域（黄色半透明）
-      if (cur.galeRadii && cur.galeRadii.length > 0) {
-        const maxGale = Math.max(...cur.galeRadii.map((r: any) => r.radiusKm || 0));
-        if (maxGale > 0) {
-          L.circle([lat, lon], { radius: maxGale * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
-        }
-      }
+    // 進路線
+    if (trackPoints.length > 1) {
+      L.polyline(trackPoints, { color: '#333', weight: 2, dashArray: '8,6', opacity: 0.8 }).addTo(map);
+    }
 
-      // 暴風域（赤半透明）
-      if (cur.stormRadii && cur.stormRadii.length > 0) {
-        const maxStorm = Math.max(...cur.stormRadii.map((r: any) => r.radiusKm || 0));
-        if (maxStorm > 0) {
-          L.circle([lat, lon], { radius: maxStorm * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
-        }
-      }
-
-      // 予報進路（点線）と予報円
-      const trackPoints: [number, number][] = [[lat, lon]];
-      const forecasts = typhoon.forecasts || [];
-
-      forecasts.forEach((fc: any, idx: number) => {
-        if (!fc.lat || !fc.lon) return;
-        trackPoints.push([fc.lat, fc.lon]);
-
-        // 予報円（白点線）
-        if (fc.circleRadiusKm > 0) {
-          L.circle([fc.lat, fc.lon], {
-            radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: '#aaa', fillOpacity: 0.08, weight: 1.5, dashArray: '6,4',
-          }).addTo(map);
-        }
-
-        // 予報円の中心にマーカー
-        const fcIcon = L.divIcon({
-          html: '<div style="width:8px;height:8px;background:#555;border-radius:50%;border:1px solid #fff;"></div>',
-          iconSize: [8, 8], iconAnchor: [4, 4], className: '',
-        });
-        L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
-
-        // 時刻ラベル：円の中心から線を延ばして表示
-        const timeLabel = formatForecastTime(fc.dateTime);
-        // 交互に北東/南東に配置して重ならないようにする
-        const angle = (idx % 2 === 0) ? -45 : 45; // 度
-        const labelOffsetKm = (fc.circleRadiusKm || 50) + 40; // 円の外側に配置
-        const rad = angle * Math.PI / 180;
-        const dLat = (labelOffsetKm / 111) * Math.cos(rad);
-        const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
-        const labelLat = fc.lat + dLat;
-        const labelLon = fc.lon + dLon;
-
-        // 引き出し線
-        L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
-          color: '#666', weight: 1, dashArray: '3,3', opacity: 0.7,
-        }).addTo(map);
-
-        // 時刻ラベル
-        const labelIcon = L.divIcon({
-          html: `<div style="background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${timeLabel}</div>`,
-          iconSize: [0, 0], iconAnchor: [0, 10], className: '',
-        });
-        L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
-      });
-
-      // 進路線
-      if (trackPoints.length > 1) {
-        L.polyline(trackPoints, { color: '#333', weight: 2, dashArray: '8,6', opacity: 0.8 }).addTo(map);
-      }
-
-      // 全体が見えるようにフィット
-      if (trackPoints.length > 1) {
-        map.fitBounds(L.latLngBounds(trackPoints).pad(0.3));
-      }
-    };
-
-    if ((window as any).L) {
-      script.onload(new Event('load'));
-    } else {
-      document.head.appendChild(script);
+    // 全体が見えるようにフィット
+    if (trackPoints.length > 1) {
+      map.fitBounds(L.latLngBounds(trackPoints).pad(0.3));
     }
 
     return () => {
@@ -639,18 +670,6 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       )}
     </div>
   );
-
-  function formatForecastTime(isoStr: string): string {
-    try {
-      const d = new Date(isoStr);
-      const day = d.getDate();
-      const hour = d.getHours();
-      if (hour === 0) return `${day}日午前0時`;
-      if (hour < 12) return `${day}日午前${hour}時`;
-      if (hour === 12) return `${day}日午後0時`;
-      return `${day}日午後${hour - 12}時`;
-    } catch { return isoStr; }
-  }
 }
 
 function InfoCard({ label, value }: { label: string; value: string }) {
