@@ -569,7 +569,30 @@ export default {
                 const wapType = wap['@_type'] || '';
                 if (wap.Circle) {
                   const circles = Array.isArray(wap.Circle) ? wap.Circle : [wap.Circle];
-                  // skip parsing circles for now, just note presence
+                  for (const c of circles) {
+                    if (c.Axes && c.Axes.Axis) {
+                      const axArr = Array.isArray(c.Axes.Axis) ? c.Axes.Axis : [c.Axes.Axis];
+                      const radiiData: any[] = [];
+                      for (const ax of axArr) {
+                        const dir = ax.Direction ? (typeof ax.Direction === 'object' ? ax.Direction['#text'] : ax.Direction) : '';
+                        const rArr = ax.Radius ? (Array.isArray(ax.Radius) ? ax.Radius : [ax.Radius]) : [];
+                        for (const r of rArr) {
+                          if (r['@_unit'] === 'km') {
+                            radiiData.push({ direction: dir, radiusKm: parseFloat(r['#text']) || 0 });
+                          }
+                        }
+                      }
+                      if (radiiData.length > 0) {
+                        if (wapType.includes('暴風')) {
+                          if (forecastType === '実況') stormRadii = radiiData;
+                          else fStormRadii = radiiData;
+                        } else if (wapType.includes('強風')) {
+                          if (forecastType === '実況') galeRadii = radiiData;
+                          else fGaleRadii = radiiData;
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }

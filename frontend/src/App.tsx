@@ -597,7 +597,7 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
 
       // 時刻ラベル (枠の中心が線の終端にくるように調整)
       const labelIcon = L.divIcon({
-        html: `<div style="background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`,
+        html: `<div style="font-family: 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`,
         iconSize: [0, 0], iconAnchor: [0, 0], className: '',
       });
       L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
