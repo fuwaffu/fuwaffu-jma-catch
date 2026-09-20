@@ -579,8 +579,11 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
 
       // 時刻ラベル：円の中心から線を延ばして表示
       const timeLabel = formatForecastTime(fc.dateTime);
-      const angle = (idx % 2 === 0) ? -45 : 45; // 度
-      const labelOffsetKm = (fc.circleRadiusKm || 50) + 60; // 円の外側に配置
+      
+      // 進行方向（大まかに北東向きが多い）に対して邪魔になりにくい角度を計算
+      // 奇数は左上(-45度)、偶数は右下(135度)などに振る
+      const angle = (idx % 2 === 0) ? -45 : 135; 
+      const labelOffsetKm = (fc.circleRadiusKm || 50) + 70; // 円の外側に配置
       const rad = angle * Math.PI / 180;
       const dLat = (labelOffsetKm / 111) * Math.cos(rad);
       const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
@@ -592,10 +595,10 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
         color: '#666', weight: 1.5, opacity: 0.8, dashArray: '2,2'
       }).addTo(map);
 
-      // 時刻ラベル
+      // 時刻ラベル (枠の中心が線の終端にくるように調整)
       const labelIcon = L.divIcon({
-        html: `<div style="background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${timeLabel}</div>`,
-        iconSize: [0, 0], iconAnchor: [0, 10], className: '',
+        html: `<div style="background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`,
+        iconSize: [0, 0], iconAnchor: [0, 0], className: '',
       });
       L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
     });
