@@ -16,6 +16,7 @@ export default function App() {
 
   const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('prefecture');
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
+  const [use24HourFormat, setUse24HourFormat] = useState(true);
 
   const fetchData = async (bustCache = false) => {
     setLoading(true);
@@ -146,14 +147,22 @@ export default function App() {
               )}
             </p>
           </div>
-          <button 
-            onClick={() => fetchData(true)} 
-            disabled={loading}
-            style={{ padding: '8px 16px', backgroundColor: loading ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontSize: '0.875rem' }}
-          >
-            <i className={`fa-solid fa-arrows-rotate${loading ? ' fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
-            {loading ? '更新中...' : '最新データを取得'}
-          </button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <button 
+              onClick={() => setUse24HourFormat(!use24HourFormat)}
+              style={{ padding: '8px 16px', backgroundColor: '#fff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '6px', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}
+            >
+              {use24HourFormat ? '24時間表記' : '午前/午後表記'}
+            </button>
+            <button 
+              onClick={() => fetchData(true)} 
+              disabled={loading}
+              style={{ padding: '8px 16px', backgroundColor: loading ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontSize: '0.875rem' }}
+            >
+              <i className={`fa-solid fa-arrows-rotate${loading ? ' fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
+              {loading ? '更新中...' : '最新データを取得'}
+            </button>
+          </div>
         </header>
 
         {error === 'LIMIT_EXCEEDED' && (
@@ -420,7 +429,7 @@ export default function App() {
                   })}
                   {activeTab === 'typhoons' && selectedTyphoon && (
                     <tr><td colSpan={4} style={{ padding: 0 }}>
-                      <TyphoonDetailView typhoon={selectedTyphoon} onBack={() => setSelectedTyphoon(null)} />
+                      <TyphoonDetailView typhoon={selectedTyphoon} onBack={() => setSelectedTyphoon(null)} use24HourFormat={use24HourFormat} />
                     </td></tr>
                   )}
                   
@@ -454,7 +463,7 @@ export default function App() {
 }
 
 // === 台風詳細ビュー（Leaflet地図＋情報パネル） ===
-function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => void }) {
+function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any; onBack: () => void; use24HourFormat: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
 
@@ -463,18 +472,25 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
   const displayName = `台風${typhoonNum}号（${typhoon.name}）`;
   const cur = typhoon.current || {};
 
-  // 「○日午前/午後○時」形式のフォーマッター
-  function formatForecastTime(isoStr: string): string {
+  // 時刻フォーマッター
+  const formatForecastTime = (isoStr: string): string => {
+    if (!isoStr) return '';
     try {
       const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
       const day = d.getDate();
       const hour = d.getHours();
-      if (hour === 0) return `${day}日午前0時`;
-      if (hour < 12) return `${day}日午前${hour}時`;
-      if (hour === 12) return `${day}日午後0時`;
-      return `${day}日午後${hour - 12}時`;
+      
+      if (use24HourFormat) {
+        return `${day}日${hour}時`;
+      } else {
+        if (hour === 0) return `${day}日午前0時`;
+        if (hour < 12) return `${day}日午前${hour}時`;
+        if (hour === 12) return `${day}日午後0時`;
+        return `${day}日午後${hour - 12}時`;
+      }
     } catch { return isoStr; }
-  }
+  };
   
 
 

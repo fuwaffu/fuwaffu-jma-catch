@@ -37,6 +37,8 @@ export default function ObsApp() {
     return () => clearInterval(interval);
   }, []);
 
+  const [use24HourFormat, setUse24HourFormat] = useState(true);
+
   // 一番最新の台風（またはTC番号が一番大きいもの）を選択
   const activeTyphoon = typhoons.length > 0 
     ? [...typhoons].sort((a, b) => b.tcNumber - a.tcNumber)[0] 
@@ -218,9 +220,23 @@ export default function ObsApp() {
     };
 
     // 日付フォーマット関数
-    const formatForecastTime = (dtStr: string) => {
-      const d = new Date(dtStr);
-      return `${d.getDate()}日${d.getHours()}時`;
+    const formatForecastTime = (isoStr: string): string => {
+      if (!isoStr) return '';
+      try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return isoStr;
+        const day = d.getDate();
+        const hour = d.getHours();
+        
+        if (use24HourFormat) {
+          return `${day}日${hour}時`;
+        } else {
+          if (hour === 0) return `${day}日午前0時`;
+          if (hour < 12) return `${day}日午前${hour}時`;
+          if (hour === 12) return `${day}日午後0時`;
+          return `${day}日午後${hour - 12}時`;
+        }
+      } catch { return isoStr; }
     };
 
     // 現在位置の時刻ラベル
@@ -285,19 +301,16 @@ export default function ObsApp() {
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
           radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '6,4',
-        }).addTo(map);
-      }
-
       const fcIcon = L.divIcon({
         html: '<div style="width:8px;height:8px;background:#333;border-radius:50%;border:1px solid #999;"></div>',
         iconSize: [8, 8], iconAnchor: [4, 4], className: '',
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
-      // 予報の暴風域（円で描画）
-      const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
-      if (fStormCircle && fStormCircle.radius > 0) {
-        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+      if (fc.circleRadiusKm > 0) {
+        L.circle([fc.lat, fc.lon], {
+          radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: '#fff', fillOpacity: 0.1, weight: 1.5, dashArray: '5,5',
+        }).addTo(map);
       }
 
       const timeLabel = formatForecastTime(fc.dateTime);
@@ -352,7 +365,7 @@ export default function ObsApp() {
     // OBSは1920x1080なので広めにパディング、かつ寄りすぎないよう最大ズームを6に制限
     map.fitBounds(bounds, { padding: [150, 150], maxZoom: 6 });
 
-  }, [activeTyphoon]);
+  }, [activeTyphoon, use24HourFormat]);
 
   if (loading) {
     return <div style={{ color: '#fff', padding: '20px', fontFamily: "'LINE Seed JP', sans-serif" }}>読み込み中...</div>;
@@ -386,6 +399,26 @@ export default function ObsApp() {
         zIndex: 2,
         pointerEvents: 'none'
       }} />
+
+      <button 
+        onClick={() => setUse24HourFormat(!use24HourFormat)}
+        style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          zIndex: 1000,
+          padding: '8px 16px',
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          color: '#1e293b',
+          border: '1px solid #cbd5e1',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          fontWeight: 600,
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}
+      >
+        {use24HourFormat ? '24時間表記' : '午前/午後表記'}
+      </button>
 
       {/* 左側の情報パネル */}
       <div style={{
