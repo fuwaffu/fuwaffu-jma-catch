@@ -1,0 +1,9 @@
+{
+  "name": "jma-weather-system",
+  "private": true,
+  "scripts": {
+    "git:pull": "git pull origin main",
+    "git:push": "git push origin main",
+    "db:force-update": "node -e \"fetch('https://jma-dashboard-backend.fuwaffu.workers.dev/api/sync-initial').then(r => r.json()).then(console.log).catch(console.error)\""
+  }
+}

@@ -29,6 +29,7 @@ export function normalizePrefectureName(prefecture: string): string {
 
 export interface Env {
   WEATHER_DATA_STORE: KVNamespace;
+  XML_QUEUE: any;
 }
 
 const parser = new XMLParser({
@@ -38,7 +39,7 @@ const parser = new XMLParser({
 });
 
 // Cache TTL: 10分
-const CACHE_TTL_SECONDS = 600;
+const CACHE_TTL_SECONDS = 60;
 
 async function cachedKvQuery(
   cacheKey: string,
@@ -106,6 +107,7 @@ export default {
       
       if (url.pathname === "/api/trigger-update") {
         await this.updateJmaData(env);
+        await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
@@ -115,6 +117,8 @@ export default {
       }
 
       if (url.pathname === "/api/clear-cache") {
+        await env.WEATHER_DATA_STORE.delete('processed_feeds');
+        await env.WEATHER_DATA_STORE.delete('typhoons');
         await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -124,6 +128,64 @@ export default {
     }
 
     return new Response("Not Found", { status: 404, headers: corsHeaders });
+  },
+
+
+  async queue(batch: any, env: Env, ctx: ExecutionContext) {
+    let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+    let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
+    let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
+
+    let warningsUpdated = false;
+    let earthquakesUpdated = false;
+    let typhoonsUpdated = false;
+
+    for (const msg of batch.messages) {
+       const { id, link, updated, telegramCode } = msg.body;
+       try {
+           const xmlRes = await fetch(link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+           if (!xmlRes.ok) continue;
+           const xmlText = await xmlRes.text();
+           const xmlData = parser.parse(xmlText);
+
+           const report = xmlData.Report;
+           if (!report) continue;
+
+           const status = report.Control?.Status;
+           if (status !== '通常') continue;
+
+           const infoType = report.Head?.InfoType;
+           const reportDateTime = report.Head?.ReportDateTime;
+
+           if (telegramCode === 'VPWW') {
+             this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
+             warningsUpdated = true;
+           } else if (telegramCode === 'VXSE') {
+             this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
+             earthquakesUpdated = true;
+           } else if (telegramCode === 'VPTW') {
+             this.processTyphoonToMemory(report, id, updated, typhoonsData);
+             typhoonsUpdated = true;
+           }
+       } catch (e) {
+           console.error('Failed to process message for id: ' + id, e);
+       }
+    }
+
+    if (warningsUpdated) {
+        await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
+    }
+    if (earthquakesUpdated) {
+        await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
+    }
+    if (typhoonsUpdated) {
+        await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
+    }
+    
+    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
+        await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
+        await invalidateApiCaches();
+    }
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -138,6 +200,10 @@ export default {
     ];
 
     let processedFeeds: string[] = await env.WEATHER_DATA_STORE.get('processed_feeds', { type: 'json' }) || [];
+    if (isInitialSync) {
+      processedFeeds = []; // Force clear cache for initial sync so it reparses
+      typhoonsData = [];
+    }
     const processedFeedsSet = new Set(processedFeeds);
 
     let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
@@ -146,7 +212,9 @@ export default {
     
     let fetchCount = 0;
     const MAX_SUBREQUESTS = 45; // Cloudflare limits to 50
-    let dataUpdated = false;
+    let warningsUpdated = false;
+    let earthquakesUpdated = false;
+    let typhoonsUpdated = false;
 
     for (const feedUrl of feedUrls) {
       if (fetchCount >= MAX_SUBREQUESTS) break;
@@ -160,8 +228,27 @@ export default {
         if (!feed.feed || !feed.feed.entry) continue;
 
         const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
-        
-        const candidateEntries = entries.filter((e: any) => e.id).slice(0, 60);
+        let candidateEntries = entries.filter((e: any) => {
+          if (!e.id) return false;
+          const link = e.link?.['@_href'] || '';
+          return link.match(/_VPWW(5[3-9]|6[0-1])_/) || 
+                 link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
+                 link.includes('_VPTW6') || link.includes('_VPTI5');
+        });
+
+        if (isInitialSync) {
+            const typhoons = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPTW'));
+            const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
+            const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPWW'));
+            
+            candidateEntries = [
+                ...typhoons.slice(0, 2),
+                ...earthquakes.slice(0, 10),
+                ...warnings.slice(0, MAX_SUBREQUESTS - 12)
+            ].sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
+        } else {
+            candidateEntries = candidateEntries.slice(0, 150);
+        }
 
         const newEntries = [];
         for (const entry of candidateEntries) {
@@ -169,11 +256,10 @@ export default {
           newEntries.push(entry);
         }
 
+        
+        const messagesToSend = [];
         for (const entry of newEntries.reverse()) {
-          if (fetchCount >= MAX_SUBREQUESTS) break;
-          
           const id = entry.id;
-          const title = entry.title;
           const updated = entry.updated;
           const link = entry.link?.['@_href'];
 
@@ -189,49 +275,26 @@ export default {
             continue;
           }
 
-          const xmlRes = await fetch(link, { headers: { "User-Agent": "Jma-Dashboard/1.0" } });
-          fetchCount++;
-          if (!xmlRes.ok) continue;
-          const xmlText = await xmlRes.text();
-          const xmlData = parser.parse(xmlText);
-
-          const report = xmlData.Report;
-          if (!report) continue;
-
-          const status = report.Control?.Status;
-          if (status !== '通常') {
-            processedFeedsSet.add(id);
-            continue;
-          }
-
-          const infoType = report.Head?.InfoType;
-          const reportDateTime = report.Head?.ReportDateTime;
-
+          messagesToSend.push({ id, link, updated, telegramCode });
           processedFeedsSet.add(id);
+        }
 
-          if (telegramCode === 'VPWW') {
-            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
-            dataUpdated = true;
-          } else if (telegramCode === 'VXSE') {
-            this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
-            dataUpdated = true;
-          } else if (telegramCode === 'VPTW') {
-            // Typhoon parsing skipped as per original
+        if (env.XML_QUEUE && messagesToSend.length > 0) {
+          for (let i = 0; i < messagesToSend.length; i += 100) {
+            const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
+            await env.XML_QUEUE.sendBatch(batch);
           }
         }
+
       } catch (e) {
         console.error(`Failed to process feed ${feedUrl}`, e);
       }
     }
 
-    if (dataUpdated) {
+    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
       // 履歴は最新の1000件のみ保持する
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
-      
-      // データストアに反映
-      await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
-      await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
-      await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
+            await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
       await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
       
       await invalidateApiCaches();
@@ -381,6 +444,359 @@ export default {
         if (earthquakesData.length > 200) {
           earthquakesData.shift(); // 古いものを削除
         }
+      }
+    }
+  },
+
+  processTyphoonToMemory(report: any, xmlId: string, updated: string, typhoonsData: any[]) {
+    const infos = report.Body?.MeteorologicalInfos;
+    if (!infos) return;
+
+    const metInfos = Array.isArray(infos.MeteorologicalInfo) ? infos.MeteorologicalInfo : (infos.MeteorologicalInfo ? [infos.MeteorologicalInfo] : []);
+    
+    let tcNumber = '';
+    let name = '';
+    let nameEn = '';
+    let typhoonClass = '';
+    let intensityClass = '';
+    let areaClass = '';
+    let centerLat = 0;
+    let centerLon = 0;
+    let location = '';
+    let direction = '';
+    let speedKmh = 0;
+    let pressure = 0;
+    let maxWind = 0;
+    let gustWind = 0;
+    let stormRadii: any[] = [];
+    let galeRadii: any[] = [];
+    let stormCenterLat: number | null = null;
+    let stormCenterLon: number | null = null;
+    let galeCenterLon: number | null = null;
+    let currentDateTimeStr = '';
+    const forecasts: any[] = [];
+    let headlineText = report.Head?.Headline?.Text || '';
+
+    for (const info of metInfos) {
+      const dateTimeObj = info.DateTime || info['@_dateTime'];
+      let dateTimeStr = '';
+      let forecastType = '';
+      if (dateTimeObj && typeof dateTimeObj === 'object') {
+        dateTimeStr = dateTimeObj['#text'] || '';
+        forecastType = dateTimeObj['@_type'] || '';
+      } else {
+        dateTimeStr = dateTimeObj || '';
+      }
+      
+      const isCurrent = forecastType === '実況' || forecastType.includes('推定');
+
+      const items = info.Item ? (Array.isArray(info.Item) ? info.Item : [info.Item]) : [];
+      
+      for (const item of items) {
+        const kinds = item.Kind ? (Array.isArray(item.Kind) ? item.Kind : [item.Kind]) : [];
+        
+        let fLat = 0, fLon = 0, fPressure = 0, fMaxWind = 0, fGustWind = 0;
+        let fDirection = '', fSpeedKmh = 0, fClass = '', fIntensity = '', fLocation = '';
+        let fCircleRadiusKm = 0;
+        let fStormRadii: any[] = [];
+        let fGaleRadii: any[] = [];
+        let fStormCenterLat: number | null = null;
+        let fStormCenterLon: number | null = null;
+        let fGaleCenterLat: number | null = null;
+        let fGaleCenterLon: number | null = null;
+        
+        for (const kind of kinds) {
+          const prop = kind?.Property;
+          if (!prop) continue;
+          
+          if (prop.TyphoonNamePart) {
+            tcNumber = prop.TyphoonNamePart.Number || tcNumber;
+            name = prop.TyphoonNamePart.NameKana || name;
+            nameEn = prop.TyphoonNamePart.Name || nameEn;
+          }
+          
+          if (prop.ClassPart) {
+            const tc = prop.ClassPart.TyphoonClass;
+            const ic = prop.ClassPart.IntensityClass;
+            const ac = prop.ClassPart.AreaClass;
+            const tcText = typeof tc === 'object' ? tc['#text'] : tc;
+            const icText = typeof ic === 'object' ? ic['#text'] : ic;
+            const acText = typeof ac === 'object' ? ac['#text'] : ac;
+            if (forecastType === '実況') {
+              typhoonClass = tcText || typhoonClass;
+              intensityClass = icText || intensityClass;
+              areaClass = acText || areaClass;
+            }
+            fClass = tcText || '';
+            fIntensity = icText || '';
+          }
+          
+          if (prop.CenterPart) {
+            const cp = prop.CenterPart;
+            const coords = cp.Coordinate ? (Array.isArray(cp.Coordinate) ? cp.Coordinate : [cp.Coordinate]) : [];
+            let parsedLat: number | null = null;
+            let parsedLon: number | null = null;
+            let precision = 0; // 0: none, 1: 度, 2: 度分
+
+            for (const c of coords) {
+              const ct = typeof c === 'object' ? (c['@_type'] || '') : '';
+              const cv = typeof c === 'object' ? (c['#text'] || '') : String(c);
+              
+              if (ct.includes('度分') && precision < 2) {
+                const m = String(cv).match(/([+-]\d+)(\d{2})([+-]\d+)(\d{2})/);
+                if (m) {
+                  const isLatNeg = m[1].startsWith('-');
+                  const isLonNeg = m[3].startsWith('-');
+                  parsedLat = (Math.abs(parseInt(m[1], 10)) + parseInt(m[2], 10) / 60) * (isLatNeg ? -1 : 1);
+                  parsedLon = (Math.abs(parseInt(m[3], 10)) + parseInt(m[4], 10) / 60) * (isLonNeg ? -1 : 1);
+                  precision = 2;
+                }
+              } else if (ct.includes('度）') && precision < 1) {
+                const m = String(cv).match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
+                if (m) {
+                  parsedLat = parseFloat(m[1]);
+                  parsedLon = parseFloat(m[2]);
+                  precision = 1;
+                }
+              }
+            }
+
+            if (parsedLat !== null && parsedLon !== null) {
+              if (isCurrent) {
+                centerLat = parsedLat;
+                centerLon = parsedLon;
+                currentDateTimeStr = dateTimeStr;
+              }
+              fLat = parsedLat;
+              fLon = parsedLon;
+            }
+            
+            if (cp.Location) { if (isCurrent) location = cp.Location; fLocation = cp.Location; }
+            if (cp.Direction) {
+              const dText = typeof cp.Direction === 'object' ? cp.Direction['#text'] : cp.Direction;
+              if (isCurrent) direction = dText || '';
+              fDirection = dText || '';
+            }
+            if (cp.Speed) {
+              const speeds = Array.isArray(cp.Speed) ? cp.Speed : [cp.Speed];
+              for (const s of speeds) {
+                if (s['@_unit'] === 'km/h') {
+                  if (isCurrent) speedKmh = s['#text'] || 0;
+                  fSpeedKmh = s['#text'] || 0;
+                }
+              }
+            }
+            if (cp.Pressure) {
+              if (isCurrent) pressure = cp.Pressure['#text'] || 0;
+              fPressure = cp.Pressure['#text'] || 0;
+            }
+            // 予報円
+            if (cp.ProbabilityCircle) {
+              const pc = cp.ProbabilityCircle;
+              const bps = pc.BasePoint ? (Array.isArray(pc.BasePoint) ? pc.BasePoint : [pc.BasePoint]) : [];
+              for (const bp of bps) {
+                const bpType = bp['@_type'] || '';
+                if (bpType.includes('度）') && !bpType.includes('度分')) {
+                  const m = String(bp['#text'] || '').match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
+                  if (m) { fLat = parseFloat(m[1]); fLon = parseFloat(m[2]); }
+                }
+              }
+              if (pc.Axes?.Axis) {
+                const axes = Array.isArray(pc.Axes.Axis) ? pc.Axes.Axis : [pc.Axes.Axis];
+                for (const ax of axes) {
+                  const radii = ax.Radius ? (Array.isArray(ax.Radius) ? ax.Radius : [ax.Radius]) : [];
+                  for (const r of radii) {
+                    if (r['@_unit'] === 'km' && String(r['@_type']).includes('確率半径')) {
+                      fCircleRadiusKm = r['#text'] || 0;
+                    }
+                  }
+                }
+              }
+              if (cp.Location) fLocation = cp.Location;
+              if (cp.Direction) { const d2 = typeof cp.Direction === 'object' ? cp.Direction['#text'] : cp.Direction; fDirection = d2 || ''; }
+              if (cp.Speed) { const sp2 = Array.isArray(cp.Speed) ? cp.Speed : [cp.Speed]; for (const s2 of sp2) { if (s2['@_unit'] === 'km/h') fSpeedKmh = s2['#text'] || 0; } }
+              if (cp.Pressure) fPressure = cp.Pressure['#text'] || 0;
+            }
+          }
+          
+          if (prop.WindPart) {
+            const ws = prop.WindPart.WindSpeed;
+            if (ws) {
+              const wsArr = Array.isArray(ws) ? ws : [ws];
+              for (const w of wsArr) {
+                if (w['@_unit'] === 'm/s') {
+                  const wType = w['@_type'] || '';
+                  if (wType.includes('最大風速')) {
+                    if (isCurrent) maxWind = w['#text'] || 0;
+                    fMaxWind = w['#text'] || 0;
+                  }
+                  if (wType.includes('最大瞬間風速')) {
+                    if (isCurrent) gustWind = w['#text'] || 0;
+                    fGustWind = w['#text'] || 0;
+                  }
+                }
+              }
+            }
+            if (prop.WarningAreaPart) {
+              const waps = Array.isArray(prop.WarningAreaPart) ? prop.WarningAreaPart : [prop.WarningAreaPart];
+              for (const wap of waps) {
+                const wapType = wap['@_type'] || '';
+                if (wap.Circle) {
+                  const circles = Array.isArray(wap.Circle) ? wap.Circle : [wap.Circle];
+                  for (const c of circles) {
+                    if (c.Axes && c.Axes.Axis) {
+                      const axArr = Array.isArray(c.Axes.Axis) ? c.Axes.Axis : [c.Axes.Axis];
+                      const radiiData: any[] = [];
+                      for (const ax of axArr) {
+                        const dir = ax.Direction ? (typeof ax.Direction === 'object' ? ax.Direction['#text'] : ax.Direction) : '';
+                        const rArr = ax.Radius ? (Array.isArray(ax.Radius) ? ax.Radius : [ax.Radius]) : [];
+                        for (const r of rArr) {
+                          if (r['@_unit'] === 'km') {
+                            radiiData.push({ direction: dir, radiusKm: parseFloat(r['#text']) || 0 });
+                          }
+                        }
+                      }
+                      
+                      let bpLat: number | null = null;
+                      let bpLon: number | null = null;
+                      if (c.BasePoint) {
+                        const bps = Array.isArray(c.BasePoint) ? c.BasePoint : [c.BasePoint];
+                        let precision = 0;
+                        for (const bp of bps) {
+                          const ct = typeof bp === 'object' ? (bp['@_type'] || '') : '';
+                          const cv = typeof bp === 'object' ? (bp['#text'] || '') : String(bp);
+                          if (ct.includes('度分') && precision < 2) {
+                            const m = String(cv).match(/([+-]\d+)(\d{2})([+-]\d+)(\d{2})/);
+                            if (m) {
+                              const isLatNeg = m[1].startsWith('-');
+                              const isLonNeg = m[3].startsWith('-');
+                              bpLat = (Math.abs(parseInt(m[1], 10)) + parseInt(m[2], 10) / 60) * (isLatNeg ? -1 : 1);
+                              bpLon = (Math.abs(parseInt(m[3], 10)) + parseInt(m[4], 10) / 60) * (isLonNeg ? -1 : 1);
+                              precision = 2;
+                            }
+                          } else if (ct.includes('度）') && precision < 1) {
+                            const m = String(cv).match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
+                            if (m) {
+                              bpLat = parseFloat(m[1]);
+                              bpLon = parseFloat(m[2]);
+                              precision = 1;
+                            }
+                          }
+                        }
+                      }
+
+                      if (radiiData.length > 0) {
+                        if (wapType.includes('暴風')) {
+                          if (isCurrent) { stormRadii = radiiData; stormCenterLat = bpLat; stormCenterLon = bpLon; }
+                          else { fStormRadii = radiiData; fStormCenterLat = bpLat; fStormCenterLon = bpLon; }
+                        } else if (wapType.includes('強風')) {
+                          if (isCurrent) { galeRadii = radiiData; galeCenterLat = bpLat; galeCenterLon = bpLon; }
+                          else { fGaleRadii = radiiData; fGaleCenterLat = bpLat; fGaleCenterLon = bpLon; }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // 暴風域・強風域の抽出（Areaから）
+        if (item.Area) {
+          const areas = Array.isArray(item.Area) ? item.Area : [item.Area];
+          for (const area of areas) {
+            if (area.Circle) {
+              const areaCircles = Array.isArray(area.Circle) ? area.Circle : [area.Circle];
+              for (const ac of areaCircles) {
+                if (ac.Axes?.Axis) {
+                  const axArr = Array.isArray(ac.Axes.Axis) ? ac.Axes.Axis : [ac.Axes.Axis];
+                  const radiiData: any[] = [];
+                  for (const ax of axArr) {
+                    const dir = ax.Direction ? (typeof ax.Direction === 'object' ? ax.Direction['#text'] : ax.Direction) : '';
+                    const rArr = ax.Radius ? (Array.isArray(ax.Radius) ? ax.Radius : [ax.Radius]) : [];
+                    for (const r of rArr) {
+                      if (r['@_unit'] === 'km') {
+                        radiiData.push({ direction: dir, radiusKm: r['#text'] || 0 });
+                      }
+                    }
+                  }
+                  if (radiiData.length > 0) {
+                    if (isCurrent) {
+                      // 暴風域は種別を名前から判定
+                      const areaName = area.Name || '';
+                      if (areaName.includes('暴風') && !areaName.includes('警戒')) {
+                        stormRadii = radiiData;
+                      } else {
+                        galeRadii = radiiData;
+                      }
+                    } else {
+                      const areaName = area.Name || '';
+                      if (areaName.includes('暴風') && !areaName.includes('警戒')) {
+                        fStormRadii = radiiData;
+                      } else {
+                        fGaleRadii = radiiData;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // 予報情報を保存
+        if (forecastType && !isCurrent && (fLat || fLon)) {
+          forecasts.push({
+            type: forecastType,
+            dateTime: dateTimeStr,
+            lat: fLat, lon: fLon,
+            circleRadiusKm: fCircleRadiusKm,
+            pressure: fPressure,
+            maxWind: fMaxWind,
+            gustWind: fGustWind,
+            direction: fDirection,
+            speedKmh: fSpeedKmh,
+            typhoonClass: fClass,
+            intensity: fIntensity,
+            location: fLocation,
+            stormRadii: fStormRadii,
+            galeRadii: fGaleRadii,
+          });
+        }
+      }
+    }
+
+    if (tcNumber) {
+      if (!name) name = '熱帯低気圧';
+      
+      for (let i = typhoonsData.length - 1; i >= 0; i--) {
+        if (typhoonsData[i].tcNumber === tcNumber) {
+          typhoonsData.splice(i, 1);
+        }
+      }
+      
+      typhoonsData.push({
+        xmlId,
+        tcNumber,
+        name,
+        nameEn,
+        headlineText,
+        updatedAt: updated,
+        current: {
+          dateTime: currentDateTimeStr || updated,
+          lat: centerLat, lon: centerLon,
+          location, direction, speedKmh, pressure,
+          maxWind, gustWind,
+          typhoonClass, intensityClass, areaClass,
+          stormRadii, galeRadii,
+          stormCenterLat, stormCenterLon, galeCenterLat, galeCenterLon
+        },
+        forecasts,
+      });
+      
+      if (typhoonsData.length > 20) {
+        typhoonsData.shift();
       }
     }
   },

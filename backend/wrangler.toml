@@ -3,8 +3,18 @@ main = "index.ts"
 compatibility_date = "2024-03-29"
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/1 * * * *"]
 
 [[kv_namespaces]]
 binding = "WEATHER_DATA_STORE"
 id = "3c3c76bfd3c148b2bd669bcec2abd660"
+
+[[queues.producers]]
+queue = "jma-xml-queue"
+binding = "XML_QUEUE"
+
+[[queues.consumers]]
+queue = "jma-xml-queue"
+max_batch_size = 15
+max_batch_timeout = 2
+max_concurrency = 1
