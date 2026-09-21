@@ -272,13 +272,7 @@ export default function ObsApp() {
       if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
     }
     
-    if (stormPointsRaw.some(p => p.r > 0)) {
-      const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
-      if (stormPolygon.length > 0) {
-        L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
-      }
-    }
-
+    // 暴風警戒域の赤点線ポリゴン（stormPolygon）は非表示にするよう修正
 
     
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
@@ -304,12 +298,7 @@ export default function ObsApp() {
         }).addTo(map);
       }
 
-      const fcIcon = L.divIcon({
-        html: '<div style="width:8px;height:8px;background:#333;border-radius:50%;border:1px solid #999;"></div>',
-        iconSize: [8, 8], iconAnchor: [4, 4], className: '',
-      });
-      L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
-
+      // 黒点（fcIcon）は非表示にするよう修正
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
           radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: '#fff', fillOpacity: 0.1, weight: 1.5, dashArray: '5,5',
@@ -337,13 +326,7 @@ export default function ObsApp() {
       L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
     });
 
-    // 現在地のアイコン
-    const curIcon = L.divIcon({
-      html: '<div style="width:14px;height:14px;background:#ef4444;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>',
-      iconSize: [14, 14], iconAnchor: [7, 7], className: '',
-    });
-    L.marker([lat, lon], { icon: curIcon, zIndexOffset: 1000 }).addTo(map);
-
+    // 現在地の黒点/赤点（curIcon）は非表示にするよう修正
     // 軌跡
     L.polyline(trackPoints, { color: '#333', weight: 2 }).addTo(map);
 

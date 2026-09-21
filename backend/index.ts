@@ -233,7 +233,7 @@ export default {
         let candidateEntries = entries.filter((e: any) => {
           if (!e.id) return false;
           const link = e.link?.['@_href'] || '';
-          return link.match(/_VPWW(5[3-9]|6[0-1])_/) || 
+          return link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/) || 
                  link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
                  link.includes('_VPTW6') || link.includes('_VPTI5');
         });
@@ -241,7 +241,7 @@ export default {
         if (isInitialSync) {
             const typhoons = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPTW'));
             const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
-            const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPWW'));
+            const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].match(/_(VPWW|VXWW|VXXX)/));
             
             candidateEntries = [
                 ...typhoons.slice(0, 2),
@@ -268,7 +268,7 @@ export default {
           if (!id || !link) continue;
 
           let telegramCode = '';
-          if (link.match(/_VPWW(5[3-9]|6[0-1])_/)) telegramCode = 'VPWW';
+          if (link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/)) telegramCode = 'VPWW';
           else if (link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_')) telegramCode = 'VXSE';
           else if (link.includes('_VPTW6') || link.includes('_VPTI5')) telegramCode = 'VPTW';
           
@@ -310,7 +310,7 @@ export default {
     if (warnings.length === 0) return;
 
     let prefecture = '';
-    const idMatch = xmlId.match(/_VPWW(?:53|54)_(\d{6})\.xml/);
+    const idMatch = xmlId.match(/_(?:VPWW|VXWW|VXXX)[0-9]{2}_(\d{6})\.xml/);
     if (idMatch) {
       prefecture = OFFICE_CODE_TO_PREF[idMatch[1]] || '';
     }
@@ -771,16 +771,34 @@ export default {
 
     if (tcNumber) {
       if (!name) name = '熱帯低気圧';
-      
+
+      let existingForecasts = [];
+      let existingNewer = null;
       for (let i = typhoonsData.length - 1; i >= 0; i--) {
         if (typhoonsData[i].tcNumber === tcNumber) {
+          if (typhoonsData[i].forecasts && typhoonsData[i].forecasts.length > 0) {
+            existingForecasts = typhoonsData[i].forecasts;
+          }
+          if (typhoonsData[i].updated && new Date(typhoonsData[i].updated) > new Date(updated)) {
+            existingNewer = typhoonsData[i];
+          }
           typhoonsData.splice(i, 1);
         }
       }
-      
-      typhoonsData.push({
-        xmlId,
-        tcNumber,
+
+      if (existingNewer) {
+        if (existingNewer.forecasts.length === 0 && forecasts.length > 0) {
+          existingNewer.forecasts = forecasts;
+        }
+        typhoonsData.push(existingNewer);
+      } else {
+        if (forecasts.length === 0 && existingForecasts.length > 0) {
+          forecasts.push(...existingForecasts);
+        }
+        typhoonsData.push({
+          xmlId,
+          tcNumber,
+          updated,
         name,
         nameEn,
         headlineText,
