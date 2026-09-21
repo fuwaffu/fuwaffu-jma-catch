@@ -265,13 +265,8 @@ export default {
     let processedFeeds: string[] = await env.WEATHER_DATA_STORE.get('processed_feeds', { type: 'json' }) || [];
     if (isInitialSync) {
       processedFeeds = []; // Force clear cache for initial sync so it reparses
-      typhoonsData = [];
     }
     const processedFeedsSet = new Set(processedFeeds);
-
-    let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-    let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
-    let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
     
     let fetchCount = 0;
     const MAX_SUBREQUESTS = 45; // Cloudflare limits to 50
@@ -553,6 +548,7 @@ export default {
     let galeRadii: any[] = [];
     let stormCenterLat: number | null = null;
     let stormCenterLon: number | null = null;
+    let galeCenterLat: number | null = null;
     let galeCenterLon: number | null = null;
     let currentDateTimeStr = '';
     const forecasts: any[] = [];
