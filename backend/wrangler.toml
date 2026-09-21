@@ -15,6 +15,6 @@ binding = "XML_QUEUE"
 
 [[queues.consumers]]
 queue = "jma-xml-queue"
-max_batch_size = 15
+max_batch_size = 2
 max_batch_timeout = 2
 max_concurrency = 1

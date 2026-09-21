@@ -347,8 +347,8 @@ export default {
               await env.WEATHER_DATA_STORE.put('sync_target', newTarget.toString());
             }
           } catch(e) {}
-          for (let i = 0; i < messagesToSend.length; i += 5) {
-            const batch = messagesToSend.slice(i, i + 5).map(msg => ({ body: msg }));
+          for (let i = 0; i < messagesToSend.length; i += 100) {
+            const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
             await env.XML_QUEUE.sendBatch(batch);
           }
         }
