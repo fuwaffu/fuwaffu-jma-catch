@@ -741,12 +741,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         }).addTo(map);
       }
 
-      // 予報円の中心にマーカー
-      const fcIcon = L.divIcon({
-        html: '<div style="width:8px;height:8px;background:#555;border-radius:50%;border:1px solid #fff;"></div>',
-        iconSize: [8, 8], iconAnchor: [4, 4], className: '',
-      });
-      L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
+      // 予報円の中心にマーカー (非表示)
 
       // 予報の暴風域（円で描画）
       const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
