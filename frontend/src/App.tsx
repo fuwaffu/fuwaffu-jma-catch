@@ -634,14 +634,6 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
-      // 予報の強風域（円で描画）
-      const fGaleLat = fc.galeCenterLat || fc.lat;
-      const fGaleLon = fc.galeCenterLon || fc.lon;
-      const fGaleMax = getRadiiMax(fc.galeRadii);
-      if (fGaleMax > 0) {
-        L.circle([fGaleLat, fGaleLon], { radius: fGaleMax * 1000, color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
-      }
-
       // 予報の暴風域（円で描画）
       const fStormLat = fc.stormCenterLat || fc.lat;
       const fStormLon = fc.stormCenterLon || fc.lon;

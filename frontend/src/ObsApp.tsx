@@ -79,7 +79,12 @@ export default function ObsApp() {
     const forecasts = activeTyphoon.forecasts || [];
     const trackPoints: [number, number][] = [[lat, lon]];
 
-
+    // 台風の目（現在位置）のマーカー
+    const typhoonIcon = L.divIcon({
+      html: '<div style="font-size:24px;text-align:center;line-height:1;color:#FF2800;font-weight:bold;text-shadow:1px 1px 0 #fff,-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff;">×</div>',
+      iconSize: [24, 24], iconAnchor: [12, 12], className: '',
+    });
+    L.marker([lat, lon], { icon: typhoonIcon }).addTo(map);
 
     // 扇形（コーン）の外枠を計算するヘルパー
     const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
@@ -214,14 +219,7 @@ export default function ObsApp() {
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
-      // 予報の強風域と暴風域（円で描画）
-      const fGaleLat = fc.galeCenterLat || fc.lat;
-      const fGaleLon = fc.galeCenterLon || fc.lon;
-      const fGaleMax = getRadiiMax(fc.galeRadii);
-      if (fGaleMax > 0) {
-        L.circle([fGaleLat, fGaleLon], { radius: fGaleMax * 1000, color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
-      }
-
+      // 予報の暴風域（円で描画）
       const fStormLat = fc.stormCenterLat || fc.lat;
       const fStormLon = fc.stormCenterLon || fc.lon;
       const fStormMax = getRadiiMax(fc.stormRadii);
