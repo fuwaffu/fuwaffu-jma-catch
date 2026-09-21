@@ -574,27 +574,6 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       L.polygon(forecastPolygon, { color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
-    // 赤色の暴風警戒域（Cone of storm warning area）
-    const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
-      const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
-      return c ? { lat: c.lat, lon: c.lon, r: c.radius } : { lat: fEyeLat, lon: fEyeLon, r: 0 };
-    };
-    
-    const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
-    const stormPointsRaw = [curStormRaw];
-    for (const f of forecasts) {
-      const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
-      stormPointsRaw.push(p);
-      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
-    }
-    
-    if (stormPointsRaw.some(p => p.r > 0)) {
-      const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
-      if (stormPolygon.length > 0) {
-        L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
-      }
-    }
-
     // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
     const getTrueCircleFromRadii = (eyeLat: number, eyeLon: number, radii: any[]) => {
       if (!radii || radii.length === 0) return null;
@@ -655,6 +634,29 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       
       return { lat: eyeLat, lon: eyeLon, radius: maxR };
     };
+
+    // 赤色の暴風警戒域（Cone of storm warning area）
+    const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
+      const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
+      return c ? { lat: c.lat, lon: c.lon, r: c.radius } : { lat: fEyeLat, lon: fEyeLon, r: 0 };
+    };
+    
+    const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
+    const stormPointsRaw = [curStormRaw];
+    for (const f of forecasts) {
+      const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
+      stormPointsRaw.push(p);
+      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
+    }
+    
+    if (stormPointsRaw.some(p => p.r > 0)) {
+      const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
+      if (stormPolygon.length > 0) {
+        L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+      }
+    }
+
+
 
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
