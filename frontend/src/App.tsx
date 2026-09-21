@@ -11,6 +11,7 @@ export default function App() {
   const [typhoons, setTyphoons] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [syncStatus, setSyncStatus] = useState({ isSyncing: false, progress: 0 });
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
 
@@ -63,6 +64,20 @@ export default function App() {
       fetchData();
     }, 300000); // 5 minutes
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let intervalId: any;
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/status`);
+        const data = await res.json();
+        setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
+      } catch (e) {}
+    };
+    checkStatus();
+    intervalId = setInterval(checkStatus, 3000);
+    return () => clearInterval(intervalId);
   }, []);
 
   // viewModeに合致するデータだけをフィルタリング
@@ -127,7 +142,18 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', padding: '16px', backgroundColor: '#f1f5f9', color: '#0f172a' }}>
-      <div style={{ maxWidth: '1152px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1152px', margin: '0 auto', position: 'relative' }}>
+        {syncStatus.isSyncing && (
+          <div style={{
+            position: 'absolute', top: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 2000,
+            backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff', padding: '16px 32px', borderRadius: '9999px',
+            display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(12px)', fontSize: '1.25rem', fontWeight: 'bold'
+          }}>
+            <i className="fa-solid fa-arrows-rotate fa-spin"></i>
+            <span>情報整理中... {syncStatus.progress}%</span>
+          </div>
+        )}
         
         <header style={{ 
           background: 'rgba(255, 255, 255, 0.65)', 
@@ -688,12 +714,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
     }
     
-    if (stormPointsRaw.some(p => p.r > 0)) {
-      const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
-      if (stormPolygon.length > 0) {
-        L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
-      }
-    }
+    // 予報の赤点ポリゴン(stormPolygon)は非表示にするよう修正
 
 
 
