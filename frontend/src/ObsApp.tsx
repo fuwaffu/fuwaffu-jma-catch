@@ -217,6 +217,26 @@ export default function ObsApp() {
       return { lat: eyeLat, lon: eyeLon, radius: maxR };
     };
 
+    // 現在位置の時刻ラベル
+    const curTimeLabel = formatForecastTime(cur.dateTime);
+    const curLabelOffsetKm = 80;
+    const curRad = -135 * Math.PI / 180;
+    const curDLat = (curLabelOffsetKm / 111) * Math.cos(curRad);
+    const curDLon = (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
+    const curLabelLat = lat + curDLat;
+    const curLabelLon = lon + curDLon;
+
+    L.polyline([[lat, lon], [curLabelLat, curLabelLon]], {
+      color: '#FF2800', weight: 1.5, opacity: 0.8, dashArray: '2,2'
+    }).addTo(map);
+
+    const curLabelIcon = L.divIcon({
+      html: `<div style="color:#FF2800;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${curTimeLabel}</div>`,
+      className: '',
+      iconSize: [0, 0]
+    });
+    L.marker([curLabelLat, curLabelLon], { icon: curLabelIcon }).addTo(map);
+
     const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
       const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
       return c ? { lat: c.lat, lon: c.lon, r: c.radius } : { lat: fEyeLat, lon: fEyeLon, r: 0 };

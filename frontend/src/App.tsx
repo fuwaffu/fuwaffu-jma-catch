@@ -635,6 +635,26 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       return { lat: eyeLat, lon: eyeLon, radius: maxR };
     };
 
+    // 現在位置の時刻ラベル
+    const curTimeLabel = formatForecastTime(cur.dateTime);
+    // 現在位置のラベルは少し左上に配置（予報の最初の点と重なりにくくするため）
+    const curLabelOffsetKm = 80;
+    const curRad = -135 * Math.PI / 180;
+    const curDLat = (curLabelOffsetKm / 111) * Math.cos(curRad);
+    const curDLon = (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
+    const curLabelLat = lat + curDLat;
+    const curLabelLon = lon + curDLon;
+
+    L.polyline([[lat, lon], [curLabelLat, curLabelLon]], {
+      color: '#FF2800', weight: 1.5, opacity: 0.8, dashArray: '2,2'
+    }).addTo(map);
+
+    const curLabelIcon = L.divIcon({
+      html: `<div style="font-family: 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`,
+      iconSize: [0, 0], iconAnchor: [0, 0], className: '',
+    });
+    L.marker([curLabelLat, curLabelLon], { icon: curLabelIcon }).addTo(map);
+
     // 赤色の暴風警戒域（Cone of storm warning area）
     const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
       const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
