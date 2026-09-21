@@ -79,11 +79,15 @@ export default function App() {
         
         if (data.isSyncing) {
             console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
-            // Poll sync-step to process the backend KV queue
+            // Poll sync-step to process the backend KV queue (batch of up to 10)
             const stepRes = await fetch(`${API_BASE}/api/sync-step`);
             const stepData = await stepRes.json();
             if (stepData.ok) {
                 setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
+                if (!stepData.isSyncing) {
+                    // Sync complete, refresh data
+                    fetchData();
+                }
             }
         }
       } catch (e) {
@@ -93,7 +97,7 @@ export default function App() {
       }
     };
     checkStatus();
-    intervalId = setInterval(checkStatus, 1500);
+    intervalId = setInterval(checkStatus, 3000);
     return () => clearInterval(intervalId);
   }, []);
 

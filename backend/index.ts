@@ -108,13 +108,15 @@ export default {
         try {
           const raw = await env.WEATHER_DATA_STORE.get('status');
           if (raw) status = { ...status, ...JSON.parse(raw) };
-          const current = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
-          const target = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+          const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+          const remaining = (state.items || []).length;
+          const total = state.total || 0;
+          const current = total - remaining;
           status.current = current;
-          status.target = target;
-          if (target > 0) {
-            status.isSyncing = current < target;
-            status.progress = Math.min(100, Math.round((current / target) * 100));
+          status.target = total;
+          if (total > 0) {
+            status.isSyncing = remaining > 0;
+            status.progress = Math.min(100, Math.round((current / total) * 100));
           } else {
             status.isSyncing = false;
             status.progress = 100;
@@ -132,22 +134,25 @@ export default {
       }
 
       if (url.pathname === "/api/sync-step") {
-        let syncQueue: any[] = await env.WEATHER_DATA_STORE.get('sync_queue', { type: 'json' }) || [];
-        const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
-        const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+        const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+        let syncQueue: any[] = state.items || [];
+        const total = state.total || 0;
         
         if (syncQueue.length === 0) {
             return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         
-        const msg = syncQueue.shift();
-        const batch = { messages: [{ body: msg }] };
-        await this.queue(batch, env, ctx); // Reuse the queue logic!
+        const BATCH_SIZE = 10;
+        const messages = syncQueue.splice(0, BATCH_SIZE).map((msg: any) => ({ body: msg }));
+        const batch = { messages };
+        await this.queue(batch, env, ctx);
         
-        await env.WEATHER_DATA_STORE.put('sync_queue', JSON.stringify(syncQueue));
+        state.items = syncQueue;
+        await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
         
-        const progress = currentTarget > 0 ? Math.min(100, Math.round(((currentProgress + 1) / currentTarget) * 100)) : 0;
-        return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current: currentProgress + 1, target: currentTarget }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const current = total - syncQueue.length;
+        const progress = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+        return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current, target: total }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/sync-initial") {
@@ -156,11 +161,9 @@ export default {
       }
 
       if (url.pathname === "/api/debug-kv") {
-        const target = await env.WEATHER_DATA_STORE.get('sync_target');
-        const current = await env.WEATHER_DATA_STORE.get('sync_current');
-        const queueLastRun = await env.WEATHER_DATA_STORE.get('debug_queue_last_run');
+        const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
         const queueError = await env.WEATHER_DATA_STORE.get('debug_queue_error');
-        return new Response(JSON.stringify({ target, current, queueLastRun, queueError }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ total: state.total, remaining: (state.items || []).length, queueError }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/clear-cache") {
@@ -168,8 +171,7 @@ export default {
         await env.WEATHER_DATA_STORE.delete('typhoons');
         await env.WEATHER_DATA_STORE.delete('warnings');
         await env.WEATHER_DATA_STORE.delete('earthquakes');
-        await env.WEATHER_DATA_STORE.delete('sync_target');
-        await env.WEATHER_DATA_STORE.delete('sync_current');
+        await env.WEATHER_DATA_STORE.delete('sync_state');
         await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -184,30 +186,35 @@ export default {
 
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
     try {
-      await env.WEATHER_DATA_STORE.put('debug_queue_last_run', new Date().toISOString() + ' size: ' + batch.messages.length);
-      
       console.log('QUEUE STARTED, batch size:', batch.messages.length);
-      let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-    let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
-    let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
+      
+      // Smart KV fetch: only load datasets that are actually needed
+      const hasVPWW = batch.messages.some((m: any) => m.body.telegramCode === 'VPWW');
+      const hasVXSE = batch.messages.some((m: any) => m.body.telegramCode === 'VXSE');
+      const hasVPTW = batch.messages.some((m: any) => m.body.telegramCode === 'VPTW');
+      
+      let warningsData: any[] = hasVPWW ? (await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || []) : [];
+      let earthquakesData: any[] = hasVXSE ? (await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || []) : [];
+      let typhoonsData: any[] = hasVPTW ? (await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || []) : [];
 
     let warningsUpdated = false;
     let earthquakesUpdated = false;
     let typhoonsUpdated = false;
 
-    for (const msg of batch.messages) {
+    // Parallel XML fetching for batch processing
+    await Promise.all(batch.messages.map(async (msg: any) => {
        const { id, link, updated, telegramCode } = msg.body;
        try {
            const xmlRes = await fetch(link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
-           if (!xmlRes.ok) continue;
+           if (!xmlRes.ok) return;
            const xmlText = await xmlRes.text();
            const xmlData = parser.parse(xmlText);
 
            const report = xmlData.Report;
-           if (!report) continue;
+           if (!report) return;
 
            const status = report.Control?.Status;
-           if (status !== '通常') continue;
+           if (status !== '通常') return;
 
            const infoType = report.Head?.InfoType;
            const reportDateTime = report.Head?.ReportDateTime;
@@ -225,7 +232,7 @@ export default {
        } catch (e) {
            console.error('Failed to process message for id: ' + id, e);
        }
-    }
+    }));
 
     if (warningsUpdated) {
         await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
@@ -236,11 +243,6 @@ export default {
     if (typhoonsUpdated) {
         await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
     }
-    
-    try {
-        const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
-        await env.WEATHER_DATA_STORE.put('sync_current', (currentProgress + batch.messages.length).toString());
-    } catch(e) {}
 
     if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
         await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
@@ -347,21 +349,23 @@ export default {
 
         if (messagesToSend.length > 0) {
           try {
-            const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
-            const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
-            let syncQueue: any[] = await env.WEATHER_DATA_STORE.get('sync_queue', { type: 'json' }) || [];
+            const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+            let syncQueue: any[] = state.items || [];
+            const remaining = syncQueue.length;
             
-            if (currentTarget > 0 && currentProgress >= currentTarget) {
-              await env.WEATHER_DATA_STORE.put('sync_target', messagesToSend.length.toString());
-              await env.WEATHER_DATA_STORE.put('sync_current', '0');
-              syncQueue = messagesToSend;
+            if (remaining === 0) {
+              // Previous sync complete, start fresh
+              state.total = messagesToSend.length;
+              state.items = messagesToSend;
             } else {
-              await env.WEATHER_DATA_STORE.put('sync_target', (currentTarget + messagesToSend.length).toString());
+              // Append to existing queue
+              state.total = (state.total || 0) + messagesToSend.length;
               syncQueue.push(...messagesToSend);
+              state.items = syncQueue;
             }
-            await env.WEATHER_DATA_STORE.put('sync_queue', JSON.stringify(syncQueue));
+            await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
           } catch(e) {
-            console.error('Failed to update sync_queue in KV', e);
+            console.error('Failed to update sync_state in KV', e);
           }
         }
 
