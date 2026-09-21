@@ -300,7 +300,10 @@ export default function ObsApp() {
 
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '6,4',
+          radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '6,4'
+        }).addTo(map);
+      }
+
       const fcIcon = L.divIcon({
         html: '<div style="width:8px;height:8px;background:#333;border-radius:50%;border:1px solid #999;"></div>',
         iconSize: [8, 8], iconAnchor: [4, 4], className: '',
