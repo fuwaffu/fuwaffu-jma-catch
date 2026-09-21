@@ -217,6 +217,12 @@ export default function ObsApp() {
       return { lat: eyeLat, lon: eyeLon, radius: maxR };
     };
 
+    // 日付フォーマット関数
+    const formatForecastTime = (dtStr: string) => {
+      const d = new Date(dtStr);
+      return `${d.getDate()}日${d.getHours()}時`;
+    };
+
     // 現在位置の時刻ラベル
     const curTimeLabel = formatForecastTime(cur.dateTime);
     const curLabelOffsetKm = 80;
@@ -270,12 +276,8 @@ export default function ObsApp() {
       L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
     }
 
-    // 予報円とマーカー
-    const formatForecastTime = (dtStr: string) => {
-      const d = new Date(dtStr);
-      return `${d.getDate()}日${d.getHours()}時`;
-    };
 
+    // 予報円とマーカー
     forecasts.forEach((fc: any, idx: number) => {
       if (!fc.lat || !fc.lon) return;
       trackPoints.push([fc.lat, fc.lon]);
