@@ -18,6 +18,9 @@ export default function ObsApp() {
         const res = await fetch('https://jma-dashboard-backend.fuwaffu.workers.dev/api/status');
         const data = await res.json();
         setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
+        if (data.lastUpdated) {
+          console.log("【システム更新検証】最新の更新時刻:", data.lastUpdated);
+        }
       } catch (e) {}
     };
     checkStatus();

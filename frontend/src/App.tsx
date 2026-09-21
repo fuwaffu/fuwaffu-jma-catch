@@ -47,6 +47,9 @@ export default function App() {
       if (statusRes.ok) {
         const statusData = await statusRes.json();
         setLastUpdated(statusData.lastUpdated || null);
+        if (statusData.lastUpdated) {
+          console.log("【システム更新検証】最新の更新時刻:", statusData.lastUpdated);
+        }
       }
     } catch (e: any) {
       setError(e.message === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : e.message);
