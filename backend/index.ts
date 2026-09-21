@@ -149,7 +149,9 @@ export default {
     
     let fetchCount = 0;
     const MAX_SUBREQUESTS = 45; // Cloudflare limits to 50
-    let dataUpdated = false;
+    let warningsUpdated = false;
+    let earthquakesUpdated = false;
+    let typhoonsUpdated = false;
 
     for (const feedUrl of feedUrls) {
       if (fetchCount >= MAX_SUBREQUESTS) break;
@@ -233,13 +235,13 @@ export default {
 
           if (telegramCode === 'VPWW') {
             this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
-            dataUpdated = true;
+            warningsUpdated = true;
           } else if (telegramCode === 'VXSE') {
             this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
-            dataUpdated = true;
+            earthquakesUpdated = true;
           } else if (telegramCode === 'VPTW') {
             this.processTyphoonToMemory(report, id, updated, typhoonsData);
-            dataUpdated = true;
+            typhoonsUpdated = true;
           }
         }
       } catch (e) {
@@ -247,14 +249,20 @@ export default {
       }
     }
 
-    if (dataUpdated) {
+    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
       // 履歴は最新の1000件のみ保持する
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
       
-      // データストアに反映
-      await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
-      await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
-      await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
+      // データストアに反映（更新があったものだけ）
+      if (warningsUpdated) {
+        await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
+      }
+      if (earthquakesUpdated) {
+        await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
+      }
+      if (typhoonsUpdated) {
+        await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
+      }
       await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
       await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
       
