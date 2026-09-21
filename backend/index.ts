@@ -132,6 +132,13 @@ export default {
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      if (url.pathname === "/api/debug-kv") {
+        return new Response(JSON.stringify({
+          target: await env.WEATHER_DATA_STORE.get("sync_target"),
+          current: await env.WEATHER_DATA_STORE.get("sync_current")
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       if (url.pathname === "/api/clear-cache") {
         await env.WEATHER_DATA_STORE.delete('processed_feeds');
         await env.WEATHER_DATA_STORE.delete('typhoons');
@@ -152,6 +159,7 @@ export default {
 
 
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
+    console.log('QUEUE STARTED, batch size:', batch.messages.length);
     let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
     let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
     let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
@@ -248,18 +256,26 @@ export default {
         fetchCount++;
         if (!res.ok) continue;
         const text = await res.text();
-        const feed = parser.parse(text);
-
-        if (!feed.feed || !feed.feed.entry) continue;
-
-        const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
-        let candidateEntries = entries.filter((e: any) => {
-          if (!e.id) return false;
-          const link = e.link?.['@_href'] || '';
-          return link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/) || 
-                 link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
-                 link.includes('_VPTW6') || link.includes('_VPTI5');
-        });
+        
+        let candidateEntries: any[] = [];
+        const entryBlocks = text.split('<entry>').slice(1);
+        for (const block of entryBlocks) {
+           const idMatch = block.match(/<id>(.*?)<\/id>/);
+           const updatedMatch = block.match(/<updated>(.*?)<\/updated>/);
+           const linkMatch = block.match(/<link[^>]*?href="(.*?)"/);
+           if (idMatch && updatedMatch && linkMatch) {
+               const link = linkMatch[1];
+               if (link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/) || 
+                   link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
+                   link.includes('_VPTW6') || link.includes('_VPTI5')) {
+                   candidateEntries.push({
+                       id: idMatch[1],
+                       updated: updatedMatch[1],
+                       link: { '@_href': linkMatch[1] }
+                   });
+               }
+           }
+        }
 
         if (isInitialSync) {
             const typhoons = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPTW'));
