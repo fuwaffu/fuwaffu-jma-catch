@@ -72,8 +72,11 @@ export default function App() {
       try {
         const res = await fetch(`${API_BASE}/api/status`);
         const data = await res.json();
+        console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
         setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
-      } catch (e) {}
+      } catch (e) {
+        console.error('[Sync Status Error]', e);
+      }
     };
     checkStatus();
     intervalId = setInterval(checkStatus, 3000);

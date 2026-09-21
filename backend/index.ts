@@ -104,12 +104,14 @@ export default {
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
       if (url.pathname === "/api/status") {
-        let status = { lastUpdated: null, isSyncing: false, progress: 0 };
+        let status: any = { lastUpdated: null, isSyncing: false, progress: 0 };
         try {
           const raw = await env.WEATHER_DATA_STORE.get('status');
-          if (raw) status = JSON.parse(raw);
+          if (raw) status = { ...status, ...JSON.parse(raw) };
           const current = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
           const target = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+          status.current = current;
+          status.target = target;
           if (target > 0) {
             status.isSyncing = current < target;
             status.progress = Math.min(100, Math.round((current / target) * 100));
@@ -117,7 +119,9 @@ export default {
             status.isSyncing = false;
             status.progress = 100;
           }
-        } catch(e) {}
+        } catch(e) {
+          console.error('Status error:', e);
+        }
         return new Response(JSON.stringify(status), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       
