@@ -441,8 +441,8 @@ export default {
     let galeRadii: any[] = [];
     let stormCenterLat: number | null = null;
     let stormCenterLon: number | null = null;
-    let galeCenterLat: number | null = null;
     let galeCenterLon: number | null = null;
+    let currentDateTimeStr = '';
     const forecasts: any[] = [];
     let headlineText = report.Head?.Headline?.Text || '';
 
@@ -456,6 +456,8 @@ export default {
       } else {
         dateTimeStr = dateTimeObj || '';
       }
+      
+      const isCurrent = forecastType === '実況' || forecastType === '推定';
 
       const items = info.Item ? (Array.isArray(info.Item) ? info.Item : [info.Item]) : [];
       
@@ -529,31 +531,32 @@ export default {
             }
 
             if (parsedLat !== null && parsedLon !== null) {
-              if (forecastType === '実況') {
+              if (isCurrent) {
                 centerLat = parsedLat;
                 centerLon = parsedLon;
+                currentDateTimeStr = dateTimeStr;
               }
               fLat = parsedLat;
               fLon = parsedLon;
             }
             
-            if (cp.Location) { if (forecastType === '実況') location = cp.Location; fLocation = cp.Location; }
+            if (cp.Location) { if (isCurrent) location = cp.Location; fLocation = cp.Location; }
             if (cp.Direction) {
               const dText = typeof cp.Direction === 'object' ? cp.Direction['#text'] : cp.Direction;
-              if (forecastType === '実況') direction = dText || '';
+              if (isCurrent) direction = dText || '';
               fDirection = dText || '';
             }
             if (cp.Speed) {
               const speeds = Array.isArray(cp.Speed) ? cp.Speed : [cp.Speed];
               for (const s of speeds) {
                 if (s['@_unit'] === 'km/h') {
-                  if (forecastType === '実況') speedKmh = s['#text'] || 0;
+                  if (isCurrent) speedKmh = s['#text'] || 0;
                   fSpeedKmh = s['#text'] || 0;
                 }
               }
             }
             if (cp.Pressure) {
-              if (forecastType === '実況') pressure = cp.Pressure['#text'] || 0;
+              if (isCurrent) pressure = cp.Pressure['#text'] || 0;
               fPressure = cp.Pressure['#text'] || 0;
             }
             // 予報円
@@ -593,11 +596,11 @@ export default {
                 if (w['@_unit'] === 'm/s') {
                   const wType = w['@_type'] || '';
                   if (wType.includes('最大風速')) {
-                    if (forecastType === '実況') maxWind = w['#text'] || 0;
+                    if (isCurrent) maxWind = w['#text'] || 0;
                     fMaxWind = w['#text'] || 0;
                   }
                   if (wType.includes('最大瞬間風速')) {
-                    if (forecastType === '実況') gustWind = w['#text'] || 0;
+                    if (isCurrent) gustWind = w['#text'] || 0;
                     fGustWind = w['#text'] || 0;
                   }
                 }
@@ -653,10 +656,10 @@ export default {
 
                       if (radiiData.length > 0) {
                         if (wapType.includes('暴風')) {
-                          if (forecastType === '実況') { stormRadii = radiiData; stormCenterLat = bpLat; stormCenterLon = bpLon; }
+                          if (isCurrent) { stormRadii = radiiData; stormCenterLat = bpLat; stormCenterLon = bpLon; }
                           else { fStormRadii = radiiData; fStormCenterLat = bpLat; fStormCenterLon = bpLon; }
                         } else if (wapType.includes('強風')) {
-                          if (forecastType === '実況') { galeRadii = radiiData; galeCenterLat = bpLat; galeCenterLon = bpLon; }
+                          if (isCurrent) { galeRadii = radiiData; galeCenterLat = bpLat; galeCenterLon = bpLon; }
                           else { fGaleRadii = radiiData; fGaleCenterLat = bpLat; fGaleCenterLon = bpLon; }
                         }
                       }
@@ -688,7 +691,7 @@ export default {
                     }
                   }
                   if (radiiData.length > 0) {
-                    if (forecastType === '実況') {
+                    if (isCurrent) {
                       // 暴風域は種別を名前から判定
                       const areaName = area.Name || '';
                       if (areaName.includes('暴風') && !areaName.includes('警戒')) {
@@ -712,7 +715,7 @@ export default {
         }
         
         // 予報情報を保存
-        if (forecastType && forecastType !== '実況' && (fLat || fLon)) {
+        if (forecastType && !isCurrent && (fLat || fLon)) {
           forecasts.push({
             type: forecastType,
             dateTime: dateTimeStr,
@@ -750,6 +753,7 @@ export default {
         headlineText,
         updatedAt: updated,
         current: {
+          dateTime: currentDateTimeStr || updated,
           lat: centerLat, lon: centerLon,
           location, direction, speedKmh, pressure,
           maxWind, gustWind,
