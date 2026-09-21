@@ -119,6 +119,8 @@ export default {
       if (url.pathname === "/api/clear-cache") {
         await env.WEATHER_DATA_STORE.delete('processed_feeds');
         await env.WEATHER_DATA_STORE.delete('typhoons');
+        await env.WEATHER_DATA_STORE.delete('warnings');
+        await env.WEATHER_DATA_STORE.delete('earthquakes');
         await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
