@@ -476,50 +476,7 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
     } catch { return isoStr; }
   }
   
-  // 非対称な強風域・暴風域のポリゴン座標を計算する関数
-  const getAsymmetricPolygon = (centerLat: number, centerLon: number, radii: any[]) => {
-    if (!radii || radii.length === 0) return [];
-    const maxRadius = Math.max(...radii.map(r => r.radiusKm || 0));
-    if (maxRadius === 0) return [];
 
-    const dirAngles: Record<string, number> = {
-      '北': 0, '北北東': 22.5, '北東': 45, '東北東': 67.5,
-      '東': 90, '東南東': 112.5, '南東': 135, '南南東': 157.5,
-      '南': 180, '南南西': 202.5, '南西': 225, '西南西': 247.5,
-      '西': 270, '西北西': 292.5, '北西': 315, '北北西': 337.5
-    };
-
-    const points: [number, number][] = [];
-    for (let angle = 0; angle < 360; angle += 5) {
-      let rKm = 0;
-      const all = radii.find(r => r.direction === '全域' || !r.direction);
-      
-      if (all) {
-        rKm = all.radiusKm;
-      } else {
-        let minDiff = 360;
-        for (const r of radii) {
-          const rDir = (r.direction || '').replace('側', '');
-          const dAngle = dirAngles[rDir];
-          if (dAngle !== undefined) {
-            let diff = Math.abs(angle - dAngle);
-            if (diff > 180) diff = 360 - diff;
-            if (diff < minDiff) {
-              minDiff = diff;
-              rKm = r.radiusKm;
-            }
-          }
-        }
-        if (rKm === 0) rKm = maxRadius;
-      }
-
-      const rad = angle * Math.PI / 180;
-      const dLat = (rKm * Math.cos(rad)) / 111;
-      const dLon = (rKm * Math.sin(rad)) / (111 * Math.cos(centerLat * Math.PI / 180));
-      points.push([centerLat + dLat, centerLon + dLon]);
-    }
-    return points;
-  };
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -641,23 +598,21 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       }
     }
 
-    // 現在の強風域と暴風域
+    // 現在の強風域と暴風域（円で描画）
+    const getRadiiMax = (radii: any[]) => radii && radii.length > 0 ? Math.max(...radii.map(r => r.radiusKm || 0)) : 0;
+
     const curGaleLat = cur.galeCenterLat || lat;
     const curGaleLon = cur.galeCenterLon || lon;
-    if (cur.galeRadii && cur.galeRadii.length > 0) {
-      const poly = getAsymmetricPolygon(curGaleLat, curGaleLon, cur.galeRadii);
-      if (poly.length > 0) {
-        L.polygon(poly, { color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
-      }
+    const curGaleMax = getRadiiMax(cur.galeRadii);
+    if (curGaleMax > 0) {
+      L.circle([curGaleLat, curGaleLon], { radius: curGaleMax * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
     const curStormLat = cur.stormCenterLat || lat;
     const curStormLon = cur.stormCenterLon || lon;
-    if (cur.stormRadii && cur.stormRadii.length > 0) {
-      const poly = getAsymmetricPolygon(curStormLat, curStormLon, cur.stormRadii);
-      if (poly.length > 0) {
-        L.polygon(poly, { color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
-      }
+    const curStormMax = getRadiiMax(cur.stormRadii);
+    if (curStormMax > 0) {
+      L.circle([curStormLat, curStormLon], { radius: curStormMax * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
     }
 
     // 予報進路（点線）と予報円
@@ -679,24 +634,20 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
-      // 予報の強風域（黄色半透明）
+      // 予報の強風域（円で描画）
       const fGaleLat = fc.galeCenterLat || fc.lat;
       const fGaleLon = fc.galeCenterLon || fc.lon;
-      if (fc.galeRadii && fc.galeRadii.length > 0) {
-        const poly = getAsymmetricPolygon(fGaleLat, fGaleLon, fc.galeRadii);
-        if (poly.length > 0) {
-          L.polygon(poly, { color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
-        }
+      const fGaleMax = getRadiiMax(fc.galeRadii);
+      if (fGaleMax > 0) {
+        L.circle([fGaleLat, fGaleLon], { radius: fGaleMax * 1000, color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
       }
 
-      // 予報の暴風域（赤半透明）
+      // 予報の暴風域（円で描画）
       const fStormLat = fc.stormCenterLat || fc.lat;
       const fStormLon = fc.stormCenterLon || fc.lon;
-      if (fc.stormRadii && fc.stormRadii.length > 0) {
-        const poly = getAsymmetricPolygon(fStormLat, fStormLon, fc.stormRadii);
-        if (poly.length > 0) {
-          L.polygon(poly, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
-        }
+      const fStormMax = getRadiiMax(fc.stormRadii);
+      if (fStormMax > 0) {
+        L.circle([fStormLat, fStormLon], { radius: fStormMax * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
       }
 
       // 時刻ラベル：円の中心から線を延ばして表示
