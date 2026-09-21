@@ -7,6 +7,7 @@ const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 export default function ObsApp() {
   const [typhoons, setTyphoons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState({ isSyncing: false, progress: 0 });
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
@@ -390,6 +391,18 @@ export default function ObsApp() {
     }}>
       {/* 背景地図 */}
       <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+      
+      {syncStatus.isSyncing && (
+        <div style={{
+          position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 2000,
+          backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff', padding: '12px 24px', borderRadius: '9999px',
+          display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 0 15px rgba(255,255,255,0.2)',
+          border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', fontWeight: 'bold'
+        }}>
+          <i className="fa-solid fa-arrows-rotate fa-spin"></i>
+          <span>情報整理中... {syncStatus.progress}%</span>
+        </div>
+      )}
 
       {/* グラデーションオーバーレイ (情報が見やすいように) */}
       <div style={{
