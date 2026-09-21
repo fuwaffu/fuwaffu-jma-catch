@@ -56,10 +56,9 @@ export default function ObsApp() {
         attributionControl: false // 出典表記は独自のUIで行うため非表示
       });
 
-      L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
-        maxZoom: 14,
-        className: 'gsi-blank-dark'
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd',
+        maxZoom: 20
       }).addTo(mapInstanceRef.current);
     }
 
@@ -130,7 +129,7 @@ export default function ObsApp() {
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getPolygonPoints(forecastPoints);
     if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#fff', fillColor: '#fff', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.polygon(forecastPolygon, { color: '#555', fillColor: '#888', fillOpacity: 0.12, weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
     // 赤色の暴風警戒域
@@ -177,12 +176,12 @@ export default function ObsApp() {
 
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '6,4',
+          radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '6,4',
         }).addTo(map);
       }
 
       const fcIcon = L.divIcon({
-        html: '<div style="width:8px;height:8px;background:#555;border-radius:50%;border:1px solid #fff;"></div>',
+        html: '<div style="width:8px;height:8px;background:#333;border-radius:50%;border:1px solid #999;"></div>',
         iconSize: [8, 8], iconAnchor: [4, 4], className: '',
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
@@ -212,11 +211,11 @@ export default function ObsApp() {
       const labelLon = fc.lon + dLon;
 
       L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
-        color: '#fff', weight: 1, dashArray: '2,2'
+        color: '#666', weight: 1, dashArray: '2,2'
       }).addTo(map);
 
       const labelIcon = L.divIcon({
-        html: `<div style="color:#fff;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #000,-1px -1px 2px #000,1px -1px 2px #000,-1px 1px 2px #000;white-space:nowrap;font-family:'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${timeLabel}</div>`,
+        html: `<div style="color:#1e293b;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${timeLabel}</div>`,
         className: '',
         iconSize: [0, 0]
       });
@@ -225,13 +224,13 @@ export default function ObsApp() {
 
     // 現在地のアイコン
     const curIcon = L.divIcon({
-      html: '<div style="width:14px;height:14px;background:#ef4444;border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px rgba(0,0,0,0.5);"></div>',
+      html: '<div style="width:14px;height:14px;background:#ef4444;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>',
       iconSize: [14, 14], iconAnchor: [7, 7], className: '',
     });
     L.marker([lat, lon], { icon: curIcon, zIndexOffset: 1000 }).addTo(map);
 
     // 軌跡
-    L.polyline(trackPoints, { color: '#fff', weight: 2 }).addTo(map);
+    L.polyline(trackPoints, { color: '#333', weight: 2 }).addTo(map);
 
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);

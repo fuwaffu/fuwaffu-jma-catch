@@ -484,21 +484,42 @@ export default {
           if (prop.CenterPart) {
             const cp = prop.CenterPart;
             const coords = cp.Coordinate ? (Array.isArray(cp.Coordinate) ? cp.Coordinate : [cp.Coordinate]) : [];
+            let parsedLat: number | null = null;
+            let parsedLon: number | null = null;
+            let precision = 0; // 0: none, 1: 度, 2: 度分
+
             for (const c of coords) {
               const ct = typeof c === 'object' ? (c['@_type'] || '') : '';
-              const cv = typeof c === 'object' ? (c['#text'] || '') : c;
-              if (ct.includes('度）') && !ct.includes('度分')) {
+              const cv = typeof c === 'object' ? (c['#text'] || '') : String(c);
+              
+              if (ct.includes('度分') && precision < 2) {
+                const m = String(cv).match(/([+-]\d+)(\d{2})([+-]\d+)(\d{2})/);
+                if (m) {
+                  const isLatNeg = m[1].startsWith('-');
+                  const isLonNeg = m[3].startsWith('-');
+                  parsedLat = (Math.abs(parseInt(m[1], 10)) + parseInt(m[2], 10) / 60) * (isLatNeg ? -1 : 1);
+                  parsedLon = (Math.abs(parseInt(m[3], 10)) + parseInt(m[4], 10) / 60) * (isLonNeg ? -1 : 1);
+                  precision = 2;
+                }
+              } else if (ct.includes('度）') && precision < 1) {
                 const m = String(cv).match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
                 if (m) {
-                  if (forecastType === '実況') {
-                    centerLat = parseFloat(m[1]);
-                    centerLon = parseFloat(m[2]);
-                  }
-                  fLat = parseFloat(m[1]);
-                  fLon = parseFloat(m[2]);
+                  parsedLat = parseFloat(m[1]);
+                  parsedLon = parseFloat(m[2]);
+                  precision = 1;
                 }
               }
             }
+
+            if (parsedLat !== null && parsedLon !== null) {
+              if (forecastType === '実況') {
+                centerLat = parsedLat;
+                centerLon = parsedLon;
+              }
+              fLat = parsedLat;
+              fLon = parsedLon;
+            }
+            
             if (cp.Location) { if (forecastType === '実況') location = cp.Location; fLocation = cp.Location; }
             if (cp.Direction) {
               const dText = typeof cp.Direction === 'object' ? cp.Direction['#text'] : cp.Direction;
