@@ -124,86 +124,114 @@ export default function ObsApp() {
       return points;
     };
 
-    // ポリゴン生成ヘルパー
-    const getPolygonPoints = (points: { lat: number, lon: number, r: number }[]) => {
+    // 扇形（コーン）の外枠を計算するヘルパー
+    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
       if (points.length <= 1) return [];
-      const conePointsLeft: [number, number][] = [];
-      const conePointsRight: [number, number][] = [];
       
-      for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        if (!p.lat || !p.lon) continue;
+      const leftPoints: [number, number][] = [];
+      const rightPoints: [number, number][] = [];
+      
+      // 球面上の緯度経度から距離(km)と角度(ラジアン)を簡易計算
+      const getDistAndAngle = (p1: any, p2: any) => {
+        const dLat = (p2.lat - p1.lat) * 111;
+        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
+        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+        const angle = Math.atan2(dLat, dLon); 
+        return { dist, angle };
+      };
+
+      const toLatLng = (p: any, angle: number): [number, number] => {
+        return [
+          p.lat + (p.r * Math.sin(angle)) / 111,
+          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
+        ];
+      };
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const { dist, angle } = getDistAndAngle(p1, p2);
         
-        const pNext = points[i + 1];
-        const pPrev = points[i - 1];
-        
-        let dx1 = 0, dy1 = 0, dx2 = 0, dy2 = 0;
-        
-        if (pNext) {
-          dx1 = (pNext.lon - p.lon) * Math.cos(p.lat * Math.PI / 180);
-          dy1 = pNext.lat - p.lat;
+        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) {
+          continue; // 内包されるか同じ場所の場合は接線を引かない
         }
-        if (pPrev) {
-          dx2 = (p.lon - pPrev.lon) * Math.cos(p.lat * Math.PI / 180);
-          dy2 = p.lat - pPrev.lat;
+        
+        const theta = Math.asin((p1.r - p2.r) / dist);
+        
+        const a1Left = angle + Math.PI / 2 + theta;
+        const a1Right = angle - Math.PI / 2 - theta;
+        const a2Left = angle + Math.PI / 2 + theta;
+        const a2Right = angle - Math.PI / 2 - theta;
+
+        if (i === 0) {
+          // 最初の円の背面（お尻）の半円を追加
+          for (let a = a1Right; a <= a1Left + 0.01; a += Math.PI / 16) {
+            rightPoints.push(toLatLng(p1, a));
+          }
         }
         
-        let dx = (dx1 + dx2) / 2;
-        let dy = (dy1 + dy2) / 2;
-        if (!pPrev) { dx = dx1; dy = dy1; }
-        if (!pNext) { dx = dx2; dy = dy2; }
+        leftPoints.push(toLatLng(p1, a1Left));
+        leftPoints.push(toLatLng(p2, a2Left));
         
-        let theta = Math.atan2(dy, dx);
-        
-        let thetaLeft = theta + Math.PI / 2;
-        let thetaRight = theta - Math.PI / 2;
-        
-        let leftLat = p.lat + (p.r * Math.sin(thetaLeft) / 111);
-        let leftLon = p.lon + (p.r * Math.cos(thetaLeft) / (111 * Math.cos(p.lat * Math.PI / 180)));
-        
-        let rightLat = p.lat + (p.r * Math.sin(thetaRight) / 111);
-        let rightLon = p.lon + (p.r * Math.cos(thetaRight) / (111 * Math.cos(p.lat * Math.PI / 180)));
-        
-        conePointsLeft.push([leftLat, leftLon]);
-        conePointsRight.unshift([rightLat, rightLon]);
+        rightPoints.unshift(toLatLng(p1, a1Right));
+        rightPoints.unshift(toLatLng(p2, a2Right));
+
+        if (i === points.length - 2) {
+          // 最後の円の前面（頭）の半円を追加
+          for (let a = a2Left; a <= a2Right + 2 * Math.PI + 0.01; a += Math.PI / 16) {
+            leftPoints.push(toLatLng(p2, a));
+          }
+        }
       }
-      return [...conePointsLeft, ...conePointsRight];
+      
+      return [...leftPoints, ...rightPoints];
     };
 
-    // 白色の予報円
+    // 白色の予報円（扇形外枠のみ）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
-    const forecastPolygon = getPolygonPoints(forecastPoints);
+    const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#555', fillColor: '#888', fillOpacity: 0.12, weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.polygon(forecastPolygon, { color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
-    // 赤色の暴風警戒域
+    // 赤色の暴風警戒域（扇形外枠のみ、暴風域が消えるまでの点だけで構成）
     const getStormR = (radii: any[]) => radii && radii.length > 0 ? Math.max(...radii.map(r => r.radiusKm || 0)) : 0;
+    
+    // 現在の暴風域の中心位置（指定がなければ台風の目）
+    const curStormCenterLat = cur.stormCenterLat || lat;
+    const curStormCenterLon = cur.stormCenterLon || lon;
     const curStormR = getStormR(cur.stormRadii);
-    const stormPointsRaw = [{ lat, lon, r: curStormR }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: getStormR(f.stormRadii) }))];
+    
+    const stormPointsRaw = [{ lat: curStormCenterLat, lon: curStormCenterLon, r: curStormR }];
+    for (const f of forecasts) {
+      const sr = getStormR(f.stormRadii);
+      const slat = f.stormCenterLat || f.lat;
+      const slon = f.stormCenterLon || f.lon;
+      stormPointsRaw.push({ lat: slat, lon: slon, r: sr });
+      if (sr === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
+    }
     
     if (stormPointsRaw.some(p => p.r > 0)) {
-      const validStormPoints = [];
-      for (const p of stormPointsRaw) {
-        validStormPoints.push(p);
-        if (p.r === 0) break; 
-      }
-      const stormPolygon = getPolygonPoints(validStormPoints);
+      const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
       if (stormPolygon.length > 0) {
         L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
       }
     }
 
-    // 現在の強風域と暴風域
+    // 現在の強風域と暴風域（中心位置のズレを考慮）
+    const curGaleLat = cur.galeCenterLat || lat;
+    const curGaleLon = cur.galeCenterLon || lon;
     if (cur.galeRadii && cur.galeRadii.length > 0) {
-      const poly = getAsymmetricPolygon(lat, lon, cur.galeRadii);
+      const poly = getAsymmetricPolygon(curGaleLat, curGaleLon, cur.galeRadii);
       if (poly.length > 0) {
         L.polygon(poly, { color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
       }
     }
 
+    const curStormLat = cur.stormCenterLat || lat;
+    const curStormLon = cur.stormCenterLon || lon;
     if (cur.stormRadii && cur.stormRadii.length > 0) {
-      const poly = getAsymmetricPolygon(lat, lon, cur.stormRadii);
+      const poly = getAsymmetricPolygon(curStormLat, curStormLon, cur.stormRadii);
       if (poly.length > 0) {
         L.polygon(poly, { color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
       }
@@ -231,16 +259,20 @@ export default function ObsApp() {
       });
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
-      // 予報の強風域と暴風域
+      // 予報の強風域と暴風域（中心位置のズレを考慮）
+      const fGaleLat = fc.galeCenterLat || fc.lat;
+      const fGaleLon = fc.galeCenterLon || fc.lon;
       if (fc.galeRadii && fc.galeRadii.length > 0) {
-        const poly = getAsymmetricPolygon(fc.lat, fc.lon, fc.galeRadii);
+        const poly = getAsymmetricPolygon(fGaleLat, fGaleLon, fc.galeRadii);
         if (poly.length > 0) {
           L.polygon(poly, { color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
         }
       }
 
+      const fStormLat = fc.stormCenterLat || fc.lat;
+      const fStormLon = fc.stormCenterLon || fc.lon;
       if (fc.stormRadii && fc.stormRadii.length > 0) {
-        const poly = getAsymmetricPolygon(fc.lat, fc.lon, fc.stormRadii);
+        const poly = getAsymmetricPolygon(fStormLat, fStormLon, fc.stormRadii);
         if (poly.length > 0) {
           L.polygon(poly, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
         }

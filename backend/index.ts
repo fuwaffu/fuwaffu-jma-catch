@@ -431,6 +431,10 @@ export default {
     let gustWind = 0;
     let stormRadii: any[] = [];
     let galeRadii: any[] = [];
+    let stormCenterLat: number | null = null;
+    let stormCenterLon: number | null = null;
+    let galeCenterLat: number | null = null;
+    let galeCenterLon: number | null = null;
     const forecasts: any[] = [];
     let headlineText = report.Head?.Headline?.Text || '';
 
@@ -455,6 +459,10 @@ export default {
         let fCircleRadiusKm = 0;
         let fStormRadii: any[] = [];
         let fGaleRadii: any[] = [];
+        let fStormCenterLat: number | null = null;
+        let fStormCenterLon: number | null = null;
+        let fGaleCenterLat: number | null = null;
+        let fGaleCenterLon: number | null = null;
         
         for (const kind of kinds) {
           const prop = kind?.Property;
@@ -606,13 +614,42 @@ export default {
                           }
                         }
                       }
+                      
+                      let bpLat: number | null = null;
+                      let bpLon: number | null = null;
+                      if (c.BasePoint) {
+                        const bps = Array.isArray(c.BasePoint) ? c.BasePoint : [c.BasePoint];
+                        let precision = 0;
+                        for (const bp of bps) {
+                          const ct = typeof bp === 'object' ? (bp['@_type'] || '') : '';
+                          const cv = typeof bp === 'object' ? (bp['#text'] || '') : String(bp);
+                          if (ct.includes('度分') && precision < 2) {
+                            const m = String(cv).match(/([+-]\d+)(\d{2})([+-]\d+)(\d{2})/);
+                            if (m) {
+                              const isLatNeg = m[1].startsWith('-');
+                              const isLonNeg = m[3].startsWith('-');
+                              bpLat = (Math.abs(parseInt(m[1], 10)) + parseInt(m[2], 10) / 60) * (isLatNeg ? -1 : 1);
+                              bpLon = (Math.abs(parseInt(m[3], 10)) + parseInt(m[4], 10) / 60) * (isLonNeg ? -1 : 1);
+                              precision = 2;
+                            }
+                          } else if (ct.includes('度）') && precision < 1) {
+                            const m = String(cv).match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
+                            if (m) {
+                              bpLat = parseFloat(m[1]);
+                              bpLon = parseFloat(m[2]);
+                              precision = 1;
+                            }
+                          }
+                        }
+                      }
+
                       if (radiiData.length > 0) {
                         if (wapType.includes('暴風')) {
-                          if (forecastType === '実況') stormRadii = radiiData;
-                          else fStormRadii = radiiData;
+                          if (forecastType === '実況') { stormRadii = radiiData; stormCenterLat = bpLat; stormCenterLon = bpLon; }
+                          else { fStormRadii = radiiData; fStormCenterLat = bpLat; fStormCenterLon = bpLon; }
                         } else if (wapType.includes('強風')) {
-                          if (forecastType === '実況') galeRadii = radiiData;
-                          else fGaleRadii = radiiData;
+                          if (forecastType === '実況') { galeRadii = radiiData; galeCenterLat = bpLat; galeCenterLon = bpLon; }
+                          else { fGaleRadii = radiiData; fGaleCenterLat = bpLat; fGaleCenterLon = bpLon; }
                         }
                       }
                     }
@@ -710,6 +747,7 @@ export default {
           maxWind, gustWind,
           typhoonClass, intensityClass, areaClass,
           stormRadii, galeRadii,
+          stormCenterLat, stormCenterLon, galeCenterLat, galeCenterLon
         },
         forecasts,
       });
