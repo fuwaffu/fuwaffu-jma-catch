@@ -29,6 +29,7 @@ export function normalizePrefectureName(prefecture: string): string {
 
 export interface Env {
   WEATHER_DATA_STORE: KVNamespace;
+  XML_QUEUE: any;
 }
 
 const parser = new XMLParser({
@@ -38,7 +39,7 @@ const parser = new XMLParser({
 });
 
 // Cache TTL: 10分
-const CACHE_TTL_SECONDS = 600;
+const CACHE_TTL_SECONDS = 60;
 
 async function cachedKvQuery(
   cacheKey: string,
@@ -129,6 +130,64 @@ export default {
     return new Response("Not Found", { status: 404, headers: corsHeaders });
   },
 
+
+  async queue(batch: any, env: Env, ctx: ExecutionContext) {
+    let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+    let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
+    let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
+
+    let warningsUpdated = false;
+    let earthquakesUpdated = false;
+    let typhoonsUpdated = false;
+
+    for (const msg of batch.messages) {
+       const { id, link, updated, telegramCode } = msg.body;
+       try {
+           const xmlRes = await fetch(link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+           if (!xmlRes.ok) continue;
+           const xmlText = await xmlRes.text();
+           const xmlData = parser.parse(xmlText);
+
+           const report = xmlData.Report;
+           if (!report) continue;
+
+           const status = report.Control?.Status;
+           if (status !== '通常') continue;
+
+           const infoType = report.Head?.InfoType;
+           const reportDateTime = report.Head?.ReportDateTime;
+
+           if (telegramCode === 'VPWW') {
+             this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
+             warningsUpdated = true;
+           } else if (telegramCode === 'VXSE') {
+             this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
+             earthquakesUpdated = true;
+           } else if (telegramCode === 'VPTW') {
+             this.processTyphoonToMemory(report, id, updated, typhoonsData);
+             typhoonsUpdated = true;
+           }
+       } catch (e) {
+           console.error('Failed to process message for id: ' + id, e);
+       }
+    }
+
+    if (warningsUpdated) {
+        await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
+    }
+    if (earthquakesUpdated) {
+        await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
+    }
+    if (typhoonsUpdated) {
+        await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
+    }
+    
+    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
+        await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
+        await invalidateApiCaches();
+    }
+  },
+
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(this.updateJmaData(env));
   },
@@ -141,6 +200,10 @@ export default {
     ];
 
     let processedFeeds: string[] = await env.WEATHER_DATA_STORE.get('processed_feeds', { type: 'json' }) || [];
+    if (isInitialSync) {
+      processedFeeds = []; // Force clear cache for initial sync so it reparses
+      typhoonsData = [];
+    }
     const processedFeedsSet = new Set(processedFeeds);
 
     let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
@@ -193,11 +256,10 @@ export default {
           newEntries.push(entry);
         }
 
+        
+        const messagesToSend = [];
         for (const entry of newEntries.reverse()) {
-          if (fetchCount >= MAX_SUBREQUESTS) break;
-          
           const id = entry.id;
-          const title = entry.title;
           const updated = entry.updated;
           const link = entry.link?.['@_href'];
 
@@ -213,37 +275,17 @@ export default {
             continue;
           }
 
-          const xmlRes = await fetch(link, { headers: { "User-Agent": "Jma-Dashboard/1.0" } });
-          fetchCount++;
-          if (!xmlRes.ok) continue;
-          const xmlText = await xmlRes.text();
-          const xmlData = parser.parse(xmlText);
-
-          const report = xmlData.Report;
-          if (!report) continue;
-
-          const status = report.Control?.Status;
-          if (status !== '通常') {
-            processedFeedsSet.add(id);
-            continue;
-          }
-
-          const infoType = report.Head?.InfoType;
-          const reportDateTime = report.Head?.ReportDateTime;
-
+          messagesToSend.push({ id, link, updated, telegramCode });
           processedFeedsSet.add(id);
+        }
 
-          if (telegramCode === 'VPWW') {
-            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
-            warningsUpdated = true;
-          } else if (telegramCode === 'VXSE') {
-            this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
-            earthquakesUpdated = true;
-          } else if (telegramCode === 'VPTW') {
-            this.processTyphoonToMemory(report, id, updated, typhoonsData);
-            typhoonsUpdated = true;
+        if (env.XML_QUEUE && messagesToSend.length > 0) {
+          for (let i = 0; i < messagesToSend.length; i += 100) {
+            const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
+            await env.XML_QUEUE.sendBatch(batch);
           }
         }
+
       } catch (e) {
         console.error(`Failed to process feed ${feedUrl}`, e);
       }
@@ -252,18 +294,7 @@ export default {
     if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
       // 履歴は最新の1000件のみ保持する
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
-      
-      // データストアに反映（更新があったものだけ）
-      if (warningsUpdated) {
-        await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
-      }
-      if (earthquakesUpdated) {
-        await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
-      }
-      if (typhoonsUpdated) {
-        await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
-      }
-      await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
+            await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
       await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
       
       await invalidateApiCaches();
@@ -457,7 +488,7 @@ export default {
         dateTimeStr = dateTimeObj || '';
       }
       
-      const isCurrent = forecastType === '実況' || forecastType === '推定';
+      const isCurrent = forecastType === '実況' || forecastType.includes('推定');
 
       const items = info.Item ? (Array.isArray(info.Item) ? info.Item : [info.Item]) : [];
       
