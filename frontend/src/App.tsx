@@ -17,15 +17,19 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('prefecture');
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = async (bustCache = false) => {
     setLoading(true);
     setError('');
     try {
+      if (bustCache) {
+        await fetch(`${API_BASE}/api/trigger-update`);
+      }
+      const cacheBuster = bustCache ? `?_t=${Date.now()}` : '';
       const [warningsRes, earthquakesRes, typhoonsRes, statusRes] = await Promise.all([
-        fetch(`${API_BASE}/api/warnings`),
-        fetch(`${API_BASE}/api/earthquakes`),
-        fetch(`${API_BASE}/api/typhoons`),
-        fetch(`${API_BASE}/api/status`)
+        fetch(`${API_BASE}/api/warnings${cacheBuster}`),
+        fetch(`${API_BASE}/api/earthquakes${cacheBuster}`),
+        fetch(`${API_BASE}/api/typhoons${cacheBuster}`),
+        fetch(`${API_BASE}/api/status${cacheBuster}`)
       ]);
 
       if (!warningsRes.ok || !earthquakesRes.ok || !typhoonsRes.ok) {
@@ -143,11 +147,11 @@ export default function App() {
             </p>
           </div>
           <button 
-            onClick={fetchData} 
+            onClick={() => fetchData(true)} 
             disabled={loading}
             style={{ padding: '8px 16px', backgroundColor: loading ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontSize: '0.875rem' }}
           >
-            <span className={loading ? 'spin-animation' : ''} style={{ display: 'inline-block', marginRight: '4px' }}>🔄</span> 
+            <i className={`fa-solid fa-arrows-rotate${loading ? ' fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
             {loading ? '更新中...' : '最新データを取得'}
           </button>
         </header>
@@ -480,9 +484,9 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
     mapInstanceRef.current = map;
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 20
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
     }).addTo(mapInstanceRef.current);
 
     // 台風マーカー（現在位置）を「×」印に

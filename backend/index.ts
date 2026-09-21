@@ -106,6 +106,7 @@ export default {
       
       if (url.pathname === "/api/trigger-update") {
         await this.updateJmaData(env);
+        await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
