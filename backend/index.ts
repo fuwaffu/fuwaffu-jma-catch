@@ -457,34 +457,43 @@ export default {
             // 既存のレベル表記を一旦削除して正規化
             wName = wName.replace(/^レベル[１-５1-5]\s*/, '');
             
-            // 特別警報・警報の判定
-            if (wName.includes('特別警報')) level = 'special';
-            else if (wName.includes('警報')) level = 'warning';
+            // レベル5
+            if (wName.includes('特別警報') || wName.includes('氾濫発生')) {
+              level = 'special';
+            } 
+            // レベル4
+            else if (wName.includes('土砂災害警戒情報') || (wName.includes('高潮') && wName.includes('警報')) || wName.includes('氾濫危険')) {
+              level = 'warning_l4';
+            }
+            // レベル3
+            else if (wName.includes('警報') || wName.includes('氾濫警戒')) {
+              level = 'warning';
+            }
+            // レベル2
+            else {
+              level = 'advisory';
+            }
 
             // 大雨、洪水（氾濫）、高潮、土砂災害のみレベルを付与する
             if (wName.includes('大雨') || wName.includes('洪水') || wName.includes('氾濫') || wName.includes('高潮') || wName.includes('土砂災害')) {
               if (level === 'special') {
                 wName = `レベル5 ${wName}`;
+                level = 'level_5';
+              } else if (level === 'warning_l4') {
+                wName = `レベル4 ${wName}`;
+                level = 'level_4';
               } else if (level === 'warning') {
-                if (wName.includes('高潮')) {
-                  // 厳密には高潮警報・土砂災害警戒情報はレベル4相当ですが、フロントの表示やこれまでの仕様に合わせる場合はレベルを付与します
-                  // 今回は高潮警報と土砂災害はレベル4、大雨・洪水はレベル3とします
-                  wName = `レベル4 ${wName}`;
-                } else {
-                  wName = `レベル3 ${wName}`;
-                }
-              } else { // advisory
-                if (wName.includes('高潮')) {
-                  // 注意報でも高潮はレベル3相当の場合があるが基本は2
-                  // 簡易的にすべてレベル2注意報とする
-                  wName = `レベル2 ${wName}`; 
-                } else {
-                  wName = `レベル2 ${wName}`;
-                }
+                wName = `レベル3 ${wName}`;
+                level = 'level_3';
+              } else {
+                wName = `レベル2 ${wName}`;
+                level = 'level_2';
               }
-              // レベル文字列からwarningLevelを再設定
-              const levelMatch = wName.match(/レベル([1-5])/);
-              if (levelMatch) level = `level_${levelMatch[1]}`;
+            } else {
+              // それ以外（強風、波浪など）はレベル文字列を付けず、元のlevelのまま
+              if (level === 'special') level = 'special';
+              else if (level === 'warning_l4' || level === 'warning') level = 'warning';
+              else level = 'advisory';
             }
 
             warningsData.push({
