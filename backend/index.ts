@@ -103,7 +103,23 @@ export default {
       if (url.pathname === "/api/warnings") return await cachedKvQuery('warnings', env, corsHeaders);
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
-      if (url.pathname === "/api/status") return await cachedKvQuery('status', env, corsHeaders);
+      if (url.pathname === "/api/status") {
+        let status = { lastUpdated: null, isSyncing: false, progress: 0 };
+        try {
+          const raw = await env.WEATHER_DATA_STORE.get('status');
+          if (raw) status = JSON.parse(raw);
+          const current = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+          const target = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+          if (target > 0) {
+            status.isSyncing = current < target;
+            status.progress = Math.min(100, Math.round((current / target) * 100));
+          } else {
+            status.isSyncing = false;
+            status.progress = 100;
+          }
+        } catch(e) {}
+        return new Response(JSON.stringify(status), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       
       if (url.pathname === "/api/trigger-update") {
         await this.updateJmaData(env);
@@ -282,6 +298,11 @@ export default {
         }
 
         if (env.XML_QUEUE && messagesToSend.length > 0) {
+          // Initialize sync counters if initial sync
+          if (isInitialSync) {
+            await env.WEATHER_DATA_STORE.put('sync_target', messagesToSend.length.toString());
+            await env.WEATHER_DATA_STORE.put('sync_current', '0');
+          }
           for (let i = 0; i < messagesToSend.length; i += 100) {
             const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
             await env.XML_QUEUE.sendBatch(batch);
@@ -771,34 +792,16 @@ export default {
 
     if (tcNumber) {
       if (!name) name = '熱帯低気圧';
-
-      let existingForecasts = [];
-      let existingNewer = null;
+      
       for (let i = typhoonsData.length - 1; i >= 0; i--) {
         if (typhoonsData[i].tcNumber === tcNumber) {
-          if (typhoonsData[i].forecasts && typhoonsData[i].forecasts.length > 0) {
-            existingForecasts = typhoonsData[i].forecasts;
-          }
-          if (typhoonsData[i].updated && new Date(typhoonsData[i].updated) > new Date(updated)) {
-            existingNewer = typhoonsData[i];
-          }
           typhoonsData.splice(i, 1);
         }
       }
-
-      if (existingNewer) {
-        if (existingNewer.forecasts.length === 0 && forecasts.length > 0) {
-          existingNewer.forecasts = forecasts;
-        }
-        typhoonsData.push(existingNewer);
-      } else {
-        if (forecasts.length === 0 && existingForecasts.length > 0) {
-          forecasts.push(...existingForecasts);
-        }
-        typhoonsData.push({
-          xmlId,
-          tcNumber,
-          updated,
+      
+      typhoonsData.push({
+        xmlId,
+        tcNumber,
         name,
         nameEn,
         headlineText,

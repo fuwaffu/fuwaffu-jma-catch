@@ -11,6 +11,20 @@ export default function ObsApp() {
   const mapInstanceRef = useRef<L.Map | null>(null);
 
   useEffect(() => {
+    let intervalId;
+    const checkStatus = async () => {
+      try {
+        const res = await fetch('https://jma-dashboard-backend.fuwaffu.workers.dev/api/status');
+        const data = await res.json();
+        setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
+      } catch (e) {}
+    };
+    checkStatus();
+    intervalId = setInterval(checkStatus, 3000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     // OBSモードでは背景透過にする
     document.body.style.backgroundColor = 'transparent';
     return () => {
