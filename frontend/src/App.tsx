@@ -475,6 +475,51 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       return `${day}日午後${hour - 12}時`;
     } catch { return isoStr; }
   }
+  
+  // 非対称な強風域・暴風域のポリゴン座標を計算する関数
+  const getAsymmetricPolygon = (centerLat: number, centerLon: number, radii: any[]) => {
+    if (!radii || radii.length === 0) return [];
+    const maxRadius = Math.max(...radii.map(r => r.radiusKm || 0));
+    if (maxRadius === 0) return [];
+
+    const dirAngles: Record<string, number> = {
+      '北': 0, '北北東': 22.5, '北東': 45, '東北東': 67.5,
+      '東': 90, '東南東': 112.5, '南東': 135, '南南東': 157.5,
+      '南': 180, '南南西': 202.5, '南西': 225, '西南西': 247.5,
+      '西': 270, '西北西': 292.5, '北西': 315, '北北西': 337.5
+    };
+
+    const points: [number, number][] = [];
+    for (let angle = 0; angle < 360; angle += 5) {
+      let rKm = 0;
+      const all = radii.find(r => r.direction === '全域' || !r.direction);
+      
+      if (all) {
+        rKm = all.radiusKm;
+      } else {
+        let minDiff = 360;
+        for (const r of radii) {
+          const rDir = (r.direction || '').replace('側', '');
+          const dAngle = dirAngles[rDir];
+          if (dAngle !== undefined) {
+            let diff = Math.abs(angle - dAngle);
+            if (diff > 180) diff = 360 - diff;
+            if (diff < minDiff) {
+              minDiff = diff;
+              rKm = r.radiusKm;
+            }
+          }
+        }
+        if (rKm === 0) rKm = maxRadius;
+      }
+
+      const rad = angle * Math.PI / 180;
+      const dLat = (rKm * Math.cos(rad)) / 111;
+      const dLon = (rKm * Math.sin(rad)) / (111 * Math.cos(centerLat * Math.PI / 180));
+      points.push([centerLat + dLat, centerLon + dLon]);
+    }
+    return points;
+  };
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -484,9 +529,9 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
     mapInstanceRef.current = map;
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+      maxZoom: 16
     }).addTo(mapInstanceRef.current);
 
     // 台風マーカー（現在位置）を「×」印に
@@ -608,17 +653,17 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
 
       // 予報の強風域（黄色半透明）
       if (fc.galeRadii && fc.galeRadii.length > 0) {
-        const maxGale = Math.max(...fc.galeRadii.map((r: any) => r.radiusKm || 0));
-        if (maxGale > 0) {
-          L.circle([fc.lat, fc.lon], { radius: maxGale * 1000, color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
+        const poly = getAsymmetricPolygon(fc.lat, fc.lon, fc.galeRadii);
+        if (poly.length > 0) {
+          L.polygon(poly, { color: '#FFD700', fillColor: 'transparent', weight: 1.2, dashArray: '4,4' }).addTo(map);
         }
       }
 
       // 予報の暴風域（赤半透明）
       if (fc.stormRadii && fc.stormRadii.length > 0) {
-        const maxStorm = Math.max(...fc.stormRadii.map((r: any) => r.radiusKm || 0));
-        if (maxStorm > 0) {
-          L.circle([fc.lat, fc.lon], { radius: maxStorm * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+        const poly = getAsymmetricPolygon(fc.lat, fc.lon, fc.stormRadii);
+        if (poly.length > 0) {
+          L.polygon(poly, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
         }
       }
 
@@ -655,7 +700,9 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
 
     // 全体が見えるようにフィット
     if (trackPoints.length > 1) {
-      map.fitBounds(L.latLngBounds(trackPoints).pad(0.3));
+      map.fitBounds(L.latLngBounds(trackPoints).pad(0.3), { maxZoom: 6 });
+    } else {
+      map.setZoom(6);
     }
 
     return () => {
