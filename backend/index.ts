@@ -375,13 +375,10 @@ export default {
       }
     }
 
-    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
+    if (processedFeedsSet.size > processedFeeds.length) {
       // 履歴は最新の1000件のみ保持する
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
-            await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
-      await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
-      
-      await invalidateApiCaches();
+      await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
     }
   },
 
