@@ -200,6 +200,11 @@ export default {
         await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
     }
     
+    try {
+        const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+        await env.WEATHER_DATA_STORE.put('sync_current', (currentProgress + batch.messages.length).toString());
+    } catch(e) {}
+
     if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
         await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
         await invalidateApiCaches();
