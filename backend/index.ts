@@ -131,6 +131,25 @@ export default {
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      if (url.pathname === "/api/sync-step") {
+        let syncQueue: any[] = await env.WEATHER_DATA_STORE.get('sync_queue', { type: 'json' }) || [];
+        const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+        const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+        
+        if (syncQueue.length === 0) {
+            return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        
+        const msg = syncQueue.shift();
+        const batch = { messages: [{ body: msg }] };
+        await this.queue(batch, env, ctx); // Reuse the queue logic!
+        
+        await env.WEATHER_DATA_STORE.put('sync_queue', JSON.stringify(syncQueue));
+        
+        const progress = currentTarget > 0 ? Math.min(100, Math.round(((currentProgress + 1) / currentTarget) * 100)) : 0;
+        return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current: currentProgress + 1, target: currentTarget }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       if (url.pathname === "/api/sync-initial") {
         await this.syncInitialJmaData(env);
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -331,25 +350,23 @@ export default {
           processedFeedsSet.add(id);
         }
 
-        if (env.XML_QUEUE && messagesToSend.length > 0) {
-          // Update sync counters regardless of initial sync
+        if (messagesToSend.length > 0) {
           try {
             const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
             const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+            let syncQueue: any[] = await env.WEATHER_DATA_STORE.get('sync_queue', { type: 'json' }) || [];
             
             if (currentTarget > 0 && currentProgress >= currentTarget) {
-              // Reset if previous queue is completely finished
               await env.WEATHER_DATA_STORE.put('sync_target', messagesToSend.length.toString());
               await env.WEATHER_DATA_STORE.put('sync_current', '0');
+              syncQueue = messagesToSend;
             } else {
-              // Add to existing target if queue is currently running
-              const newTarget = currentTarget + messagesToSend.length;
-              await env.WEATHER_DATA_STORE.put('sync_target', newTarget.toString());
+              await env.WEATHER_DATA_STORE.put('sync_target', (currentTarget + messagesToSend.length).toString());
+              syncQueue.push(...messagesToSend);
             }
-          } catch(e) {}
-          for (let i = 0; i < messagesToSend.length; i += 100) {
-            const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
-            await env.XML_QUEUE.sendBatch(batch);
+            await env.WEATHER_DATA_STORE.put('sync_queue', JSON.stringify(syncQueue));
+          } catch(e) {
+            console.error('Failed to update sync_queue in KV', e);
           }
         }
 

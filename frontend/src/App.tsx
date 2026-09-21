@@ -68,18 +68,32 @@ export default function App() {
 
   useEffect(() => {
     let intervalId: any;
+    let isProcessing = false;
     const checkStatus = async () => {
+      if (isProcessing) return;
+      isProcessing = true;
       try {
         const res = await fetch(`${API_BASE}/api/status`);
         const data = await res.json();
-        console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
         setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
+        
+        if (data.isSyncing) {
+            console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
+            // Poll sync-step to process the backend KV queue
+            const stepRes = await fetch(`${API_BASE}/api/sync-step`);
+            const stepData = await stepRes.json();
+            if (stepData.ok) {
+                setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
+            }
+        }
       } catch (e) {
         console.error('[Sync Status Error]', e);
+      } finally {
+        isProcessing = false;
       }
     };
     checkStatus();
-    intervalId = setInterval(checkStatus, 3000);
+    intervalId = setInterval(checkStatus, 1500);
     return () => clearInterval(intervalId);
   }, []);
 
