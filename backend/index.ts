@@ -137,6 +137,8 @@ export default {
         await env.WEATHER_DATA_STORE.delete('typhoons');
         await env.WEATHER_DATA_STORE.delete('warnings');
         await env.WEATHER_DATA_STORE.delete('earthquakes');
+        await env.WEATHER_DATA_STORE.delete('sync_target');
+        await env.WEATHER_DATA_STORE.delete('sync_current');
         await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
