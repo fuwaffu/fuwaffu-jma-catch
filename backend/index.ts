@@ -163,8 +163,11 @@ export default {
 
 
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
-    console.log('QUEUE STARTED, batch size:', batch.messages.length);
-    let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+    try {
+      await env.WEATHER_DATA_STORE.put('debug_queue_last_run', new Date().toISOString() + ' size: ' + batch.messages.length);
+      
+      console.log('QUEUE STARTED, batch size:', batch.messages.length);
+      let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
     let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
     let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
 
@@ -222,6 +225,9 @@ export default {
     if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
         await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
         await invalidateApiCaches();
+    }
+    } catch (queueErr) {
+       await env.WEATHER_DATA_STORE.put('debug_queue_error', String(queueErr));
     }
   },
 
