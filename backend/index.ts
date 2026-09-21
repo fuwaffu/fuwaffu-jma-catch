@@ -137,10 +137,11 @@ export default {
       }
 
       if (url.pathname === "/api/debug-kv") {
-        return new Response(JSON.stringify({
-          target: await env.WEATHER_DATA_STORE.get("sync_target"),
-          current: await env.WEATHER_DATA_STORE.get("sync_current")
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const target = await env.WEATHER_DATA_STORE.get('sync_target');
+        const current = await env.WEATHER_DATA_STORE.get('sync_current');
+        const queueLastRun = await env.WEATHER_DATA_STORE.get('debug_queue_last_run');
+        const queueError = await env.WEATHER_DATA_STORE.get('debug_queue_error');
+        return new Response(JSON.stringify({ target, current, queueLastRun, queueError }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/clear-cache") {
