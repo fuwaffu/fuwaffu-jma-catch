@@ -298,11 +298,21 @@ export default {
         }
 
         if (env.XML_QUEUE && messagesToSend.length > 0) {
-          // Initialize sync counters if initial sync
-          if (isInitialSync) {
-            await env.WEATHER_DATA_STORE.put('sync_target', messagesToSend.length.toString());
-            await env.WEATHER_DATA_STORE.put('sync_current', '0');
-          }
+          // Update sync counters regardless of initial sync
+          try {
+            const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+            const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+            
+            if (currentTarget > 0 && currentProgress >= currentTarget) {
+              // Reset if previous queue is completely finished
+              await env.WEATHER_DATA_STORE.put('sync_target', messagesToSend.length.toString());
+              await env.WEATHER_DATA_STORE.put('sync_current', '0');
+            } else {
+              // Add to existing target if queue is currently running
+              const newTarget = currentTarget + messagesToSend.length;
+              await env.WEATHER_DATA_STORE.put('sync_target', newTarget.toString());
+            }
+          } catch(e) {}
           for (let i = 0; i < messagesToSend.length; i += 100) {
             const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
             await env.XML_QUEUE.sendBatch(batch);
