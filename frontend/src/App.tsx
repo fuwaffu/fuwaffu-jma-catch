@@ -575,20 +575,17 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
     }
 
     // 赤色の暴風警戒域（Cone of storm warning area）
-    const getStormR = (radii: any[]) => radii && radii.length > 0 ? Math.max(...radii.map(r => r.radiusKm || 0)) : 0;
+    const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
+      const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
+      return c ? { lat: c.lat, lon: c.lon, r: c.radius } : { lat: fEyeLat, lon: fEyeLon, r: 0 };
+    };
     
-    // 現在の暴風域の中心位置（指定がなければ台風の目）
-    const curStormCenterLat = cur.stormCenterLat || lat;
-    const curStormCenterLon = cur.stormCenterLon || lon;
-    const curStormR = getStormR(cur.stormRadii);
-    
-    const stormPointsRaw = [{ lat: curStormCenterLat, lon: curStormCenterLon, r: curStormR }];
+    const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
+    const stormPointsRaw = [curStormRaw];
     for (const f of forecasts) {
-      const sr = getStormR(f.stormRadii);
-      const slat = f.stormCenterLat || f.lat;
-      const slon = f.stormCenterLon || f.lon;
-      stormPointsRaw.push({ lat: slat, lon: slon, r: sr });
-      if (sr === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
+      const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
+      stormPointsRaw.push(p);
+      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
     }
     
     if (stormPointsRaw.some(p => p.r > 0)) {
@@ -598,21 +595,76 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       }
     }
 
-    // 現在の強風域と暴風域（円で描画）
-    const getRadiiMax = (radii: any[]) => radii && radii.length > 0 ? Math.max(...radii.map(r => r.radiusKm || 0)) : 0;
+    // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
+    const getTrueCircleFromRadii = (eyeLat: number, eyeLon: number, radii: any[]) => {
+      if (!radii || radii.length === 0) return null;
+      
+      const all = radii.find(r => r.direction === '全域' || !r.direction);
+      if (all) {
+        return { lat: eyeLat, lon: eyeLon, radius: all.radiusKm };
+      }
 
-    const curGaleLat = cur.galeCenterLat || lat;
-    const curGaleLon = cur.galeCenterLon || lon;
-    const curGaleMax = getRadiiMax(cur.galeRadii);
-    if (curGaleMax > 0) {
-      L.circle([curGaleLat, curGaleLon], { radius: curGaleMax * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+      const dirAngles: Record<string, number> = {
+        '北': 0, '北北東': 22.5, '北東': 45, '東北東': 67.5,
+        '東': 90, '東南東': 112.5, '南東': 135, '南南東': 157.5,
+        '南': 180, '南南西': 202.5, '南西': 225, '西南西': 247.5,
+        '西': 270, '西北西': 292.5, '北西': 315, '北北西': 337.5
+      };
+
+      let maxR = 0;
+      let minOppositeR = 0;
+      let maxDir = '';
+
+      for (const r of radii) {
+        if (r.radiusKm > maxR) {
+          maxR = r.radiusKm;
+          maxDir = (r.direction || '').replace('側', '');
+        }
+      }
+
+      const maxAngle = dirAngles[maxDir];
+      if (maxAngle !== undefined) {
+        const oppAngle = (maxAngle + 180) % 360;
+        let minDiff = 360;
+        let foundOpposite = false;
+        for (const r of radii) {
+           const dir = (r.direction || '').replace('側', '');
+           const angle = dirAngles[dir];
+           if (angle !== undefined) {
+              let diff = Math.abs(angle - oppAngle);
+              if (diff > 180) diff = 360 - diff;
+              if (diff < minDiff) {
+                 minDiff = diff;
+                 minOppositeR = r.radiusKm;
+                 foundOpposite = true;
+              }
+           }
+        }
+        
+        if (!foundOpposite || minOppositeR === 0) minOppositeR = maxR;
+
+        const trueRadius = (maxR + minOppositeR) / 2;
+        const offsetKm = (maxR - minOppositeR) / 2;
+        
+        const rad = maxAngle * Math.PI / 180;
+        const dLat = (offsetKm * Math.cos(rad)) / 111;
+        const dLon = (offsetKm * Math.sin(rad)) / (111 * Math.cos(eyeLat * Math.PI / 180));
+        
+        return { lat: eyeLat + dLat, lon: eyeLon + dLon, radius: trueRadius };
+      }
+      
+      return { lat: eyeLat, lon: eyeLon, radius: maxR };
+    };
+
+    // 現在の強風域と暴風域（台風の目からの真の円として描画）
+    const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
+    if (curGaleCircle && curGaleCircle.radius > 0) {
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
-    const curStormLat = cur.stormCenterLat || lat;
-    const curStormLon = cur.stormCenterLon || lon;
-    const curStormMax = getRadiiMax(cur.stormRadii);
-    if (curStormMax > 0) {
-      L.circle([curStormLat, curStormLon], { radius: curStormMax * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
+    const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
+    if (curStormCircle && curStormCircle.radius > 0) {
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
     }
 
     // 予報進路（点線）と予報円
@@ -635,11 +687,9 @@ function TyphoonDetailView({ typhoon, onBack }: { typhoon: any; onBack: () => vo
       L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
 
       // 予報の暴風域（円で描画）
-      const fStormLat = fc.stormCenterLat || fc.lat;
-      const fStormLon = fc.stormCenterLon || fc.lon;
-      const fStormMax = getRadiiMax(fc.stormRadii);
-      if (fStormMax > 0) {
-        L.circle([fStormLat, fStormLon], { radius: fStormMax * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+      const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
+      if (fStormCircle && fStormCircle.radius > 0) {
+        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
       }
 
       // 時刻ラベル：円の中心から線を延ばして表示
