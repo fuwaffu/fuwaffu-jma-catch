@@ -24,7 +24,7 @@ export default function App() {
     setError('');
     try {
       if (bustCache) {
-        await fetch(`${API_BASE}/api/trigger-update`);
+        await fetch(`${API_BASE}/api/sync-initial`);
       }
       const cacheBuster = bustCache ? `?_t=${Date.now()}` : '';
       const [warningsRes, earthquakesRes, typhoonsRes, statusRes] = await Promise.all([

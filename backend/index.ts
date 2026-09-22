@@ -163,9 +163,8 @@ export default {
       }
       
       if (url.pathname === "/api/trigger-update") {
-        await this.updateJmaData(env);
-        await invalidateApiCaches();
-        return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // Obsolete route, now handled by sync-initial
+        return new Response(JSON.stringify({ error: "Use /api/sync-initial instead" }), { status: 400, headers: corsHeaders });
       }
 
       if (url.pathname === "/api/sync-step") {
@@ -332,7 +331,6 @@ export default {
         await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
       }
       if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
-        await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
         await invalidateApiCaches();
       }
       
@@ -372,7 +370,6 @@ export default {
   async updateJmaData(env: Env, isInitialSync = false) {
     const feedUrls = [
       'https://www.data.jma.go.jp/developer/xml/feed/extra.xml',
-      'https://www.data.jma.go.jp/developer/xml/feed/extra_l.xml',
       'https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml'
     ];
 
@@ -384,6 +381,7 @@ export default {
     
     let fetchCount = 0;
     const MAX_SUBREQUESTS = 99999; // Render.com 無制限
+    let globalMaxEntryTime = 0;
     let warningsUpdated = false;
     let earthquakesUpdated = false;
     let typhoonsUpdated = false;
@@ -442,6 +440,7 @@ export default {
           
           // <updated>タイムスタンプによる差分判定 (l-telopスキル準拠)
           const entryTime = new Date(entry.updated).getTime();
+          if (entryTime > globalMaxEntryTime) globalMaxEntryTime = entryTime;
           if (!isInitialSync && entryTime <= lastUpdated) continue;
 
           newEntries.push(entry);
@@ -504,6 +503,16 @@ export default {
       // 履歴は最新の1000件のみ保持する
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
       await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
+    }
+
+    if (globalMaxEntryTime > 0) {
+      const statusStr = await env.WEATHER_DATA_STORE.get('status');
+      const status = statusStr ? JSON.parse(statusStr) : {};
+      const currentLastUpdated = status.lastUpdated ? new Date(status.lastUpdated).getTime() : 0;
+      if (globalMaxEntryTime > currentLastUpdated) {
+        status.lastUpdated = new Date(globalMaxEntryTime).toISOString();
+        await env.WEATHER_DATA_STORE.put('status', JSON.stringify(status));
+      }
     }
   },
 
