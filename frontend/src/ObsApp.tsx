@@ -11,15 +11,32 @@ export default function ObsApp() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
+  const prevIsSyncing = useRef(false);
+
   useEffect(() => {
     let intervalId;
     const checkStatus = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/status`);
         const data = await res.json();
-        setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
+        
+        const currentlySyncing = !!data.isSyncing;
+        setSyncStatus({ isSyncing: currentlySyncing, progress: data.progress || 0 });
+        
+        if (currentlySyncing) {
+            // syncing
+        } else if (prevIsSyncing.current) {
+            console.log('[Sync Status] Sync complete, fetching new data...');
+            // Need to fetch data here... wait, fetchData is defined lower down!
+            // I should just emit an event or rely on the 5 min interval? 
+            // We can dispatch a custom event.
+            window.dispatchEvent(new Event('forceFetchData'));
+        }
+        
+        prevIsSyncing.current = currentlySyncing;
+        
         if (data.lastUpdated) {
-          console.log("【システム更新検証】最新の更新時刻:", data.lastUpdated);
+          // console.log("【システム更新検証】最新の更新時刻:", data.lastUpdated);
         }
       } catch (e) {}
     };
@@ -52,7 +69,14 @@ export default function ObsApp() {
     
     fetchData();
     const interval = setInterval(fetchData, 300000);
-    return () => clearInterval(interval);
+    
+    const handleForceFetch = () => fetchData();
+    window.addEventListener('forceFetchData', handleForceFetch);
+    
+    return () => {
+        clearInterval(interval);
+        window.removeEventListener('forceFetchData', handleForceFetch);
+    };
   }, []);
 
   const [use24HourFormat, setUse24HourFormat] = useState(true);

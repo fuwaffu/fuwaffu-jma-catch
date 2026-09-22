@@ -66,6 +66,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  const prevIsSyncing = useRef(false);
+
   useEffect(() => {
     let timeoutId: any;
     let isProcessing = false;
@@ -77,15 +79,20 @@ export default function App() {
       try {
         const res = await fetch(`${API_BASE}/api/status`);
         const data = await res.json();
-        setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
         
-        if (data.isSyncing) {
-            console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
+        const currentlySyncing = !!data.isSyncing;
+        setSyncStatus({ isSyncing: currentlySyncing, progress: data.progress || 0 });
+        
+        if (currentlySyncing) {
+            console.log(`[Sync Status] isSyncing: true, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
             // Render.comバックエンドが同期を完了するまで待つ
-        } else if (syncStatus.isSyncing) {
+        } else if (prevIsSyncing.current) {
             // 同期中だったのが完了に変わった場合、データを再取得
+            console.log('[Sync Status] Sync complete, fetching new data...');
             fetchData();
         }
+        
+        prevIsSyncing.current = currentlySyncing;
       } catch (e) {
         console.error('[Sync Status Error]', e);
         consecutiveErrors++;

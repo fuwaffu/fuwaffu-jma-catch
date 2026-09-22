@@ -96,7 +96,8 @@ async function runBackgroundSync() {
             const batchSize = Math.min(200, state.items.length);
             const batch = state.items.splice(0, batchSize);
             
-            const processed = await Logic.processQueueAdaptive(batch, env as any, ctx, 500000 * 10);
+            // XMLパース時の文字列長の上限を大きく設定 (25MB)
+            const processed = await Logic.processQueueAdaptive(batch, env as any, ctx, 25000000);
             
             // 処理しきれなかったものがあれば先頭に戻す
             if (batch.length > 0) {
