@@ -228,6 +228,13 @@ export default {
           }
           const xmlText = await xmlRes.text();
           
+          // サイズが大きすぎるファイル(Poison Pill)はパースすると10ms制限を超えてクラッシュし、
+          // 無限ループの原因になるためスキップする。目安として1.5MB (1,500,000 bytes)
+          if (xmlText.length > 1500000) {
+            console.warn(`[Adaptive] Skipping large file (size: ${xmlText.length} bytes): ${link}`);
+            syncQueue.shift(); processed++; continue;
+          }
+          
           // XMLパース (CPU集約: 時間を計測)
           const parseStart = Date.now();
           const xmlData = parser.parse(xmlText);
@@ -495,13 +502,6 @@ export default {
           if (!area) continue;
           const region = area.Name;
         
-          // 既存の同一region+areaTypeのデータを削除
-          for (let i = warningsData.length - 1; i >= 0; i--) {
-            if (warningsData[i].region === region && warningsData[i].areaType === areaType) {
-              warningsData.splice(i, 1);
-            }
-          }
-
           const kinds = Array.isArray(item.Kind) ? item.Kind : (item.Kind ? [item.Kind] : []);
           
           for (const kind of kinds) {
@@ -509,8 +509,6 @@ export default {
             const kindName = kind.Name;
             const kindCode = kind.Code;
             if (!kindName) continue;
-            if (kindName.includes('解除') || kindName === 'なし') continue;
-            if (kind.Status === '解除') continue;
 
             let wName = kindName;
             let level = 'advisory';
@@ -557,6 +555,28 @@ export default {
               else level = 'advisory';
             }
 
+            // 1. 「解除」の場合：配列から削除する（非表示）
+            if (kindName.includes('解除') || kindName === 'なし' || kind.Status === '解除') {
+              for (let i = warningsData.length - 1; i >= 0; i--) {
+                if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
+                  warningsData.splice(i, 1);
+                }
+              }
+              continue;
+            }
+
+            // 3. 「継続」の場合：処理をスキップ（何もしない）
+            if (kind.Status === '継続') {
+              continue;
+            }
+
+            // 2. 「発表」またはそれ以外の場合：DB(配列)に追加
+            // 同じ警報が既にある場合は重複を防ぐため削除してから追加する
+            for (let i = warningsData.length - 1; i >= 0; i--) {
+              if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
+                warningsData.splice(i, 1);
+              }
+            }
             warningsData.push({
               xmlId, reportDateTime, region, prefecture, areaType, 
               warningCode: kindCode || '', warningName: wName, warningLevel: level, infoType, status
