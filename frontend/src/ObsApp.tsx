@@ -7,7 +7,6 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://jma-dashboard-bac
 export default function ObsApp() {
   const [typhoons, setTyphoons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState({ isSyncing: false, progress: 0 });
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
@@ -21,7 +20,6 @@ export default function ObsApp() {
         const data = await res.json();
         
         const currentlySyncing = !!data.isSyncing;
-        setSyncStatus({ isSyncing: currentlySyncing, progress: data.progress || 0 });
         
         if (currentlySyncing) {
             // syncing

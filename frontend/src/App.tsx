@@ -9,9 +9,8 @@ export default function App() {
   const [warnings, setWarnings] = useState<any[]>([]);
   const [earthquakes, setEarthquakes] = useState<any[]>([]);
   const [typhoons, setTyphoons] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [syncStatus, setSyncStatus] = useState({ isSyncing: false, progress: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>('');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
 
@@ -81,7 +80,6 @@ export default function App() {
         const data = await res.json();
         
         const currentlySyncing = !!data.isSyncing;
-        setSyncStatus({ isSyncing: currentlySyncing, progress: data.progress || 0 });
         
         if (currentlySyncing) {
             console.log(`[Sync Status] isSyncing: true, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
