@@ -440,8 +440,11 @@ export default {
               state.items = messagesToSend;
             } else {
               // 新しいデータを優先して処理するため、キューの先頭に追加(LIFO)
-              state.total = (state.total || 0) + messagesToSend.length;
-              state.items = [...messagesToSend, ...syncQueue];
+              // 重複を排除してから追加する
+              const existingIds = new Set(syncQueue.map(i => i.id));
+              const uniqueMessages = messagesToSend.filter(m => !existingIds.has(m.id));
+              state.total = (state.total || 0) + uniqueMessages.length;
+              state.items = [...uniqueMessages, ...syncQueue];
             }
             await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
           } catch(e) {
