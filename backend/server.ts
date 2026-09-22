@@ -92,24 +92,18 @@ async function runBackgroundSync() {
         let totalProcessed = 0;
         
         while (state.items.length > 0) {
-            // 200件ずつ処理して進捗を保存する
-            const batchSize = Math.min(200, state.items.length);
-            const batch = state.items.splice(0, batchSize);
+            const initialLength = state.items.length;
             
-            // XMLパース時の文字列長の上限を大きく設定 (25MB)
-            const processed = await Logic.processQueueAdaptive(batch, env as any, ctx, 25000000);
-            
-            // 処理しきれなかったものがあれば先頭に戻す
-            if (batch.length > 0) {
-                state.items.unshift(...batch);
-            }
+            // 200件という固定枠ではなく、残りのキューをすべて渡し、
+            // 内部のXML合計サイズ(25MB)に到達するまでフレキシブルに処理させる
+            const processed = await Logic.processQueueAdaptive(state.items, env as any, ctx, 25000000);
             
             // Poison pill対策: 1件も処理できず、かつバッチが減らない場合は先頭を捨てる
-            if (processed === 0 && batch.length === batchSize) {
+            if (processed === 0 && state.items.length === initialLength) {
                 state.items.shift();
             }
             
-            totalProcessed += processed;
+            totalProcessed += (initialLength - state.items.length);
             
             // 途中経過を保存
             await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
