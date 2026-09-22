@@ -195,7 +195,7 @@ export default {
   // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
   async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext): Promise<number> {
     const MAX_SUBREQUESTS = 30; // Workers制限50のうち余裕を持たせる（KV操作もサブリクエストを消費するため）
-    const CPU_BUDGET_MS = 8;    // CPU制限10msのうち余裕を持たせる
+    const CPU_BUDGET_MS = 4;    // CPU制限10msのうち余裕を持たせる(JSON.stringify等のオーバーヘッド考慮)
     let processed = 0;
     let cpuEstimate = 0; // パース処理のCPU時間の推定値(ms)
     
