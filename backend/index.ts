@@ -60,10 +60,13 @@ async function cachedKvQuery(
   }
 
   // KVからデータを取得
-  let data = await env.WEATHER_DATA_STORE.get(cacheKey, { type: 'json' });
+  let data: any = await env.WEATHER_DATA_STORE.get(cacheKey, { type: 'json' });
   if (data === null) {
     if (cacheKey === 'status') data = { lastUpdated: null };
     else data = [];
+  } else if (Array.isArray(data)) {
+    // クライアントに返す前に論理削除(isCancelled)されたデータを除外
+    data = data.filter((d: any) => !d.isCancelled);
   }
 
   const body = JSON.stringify(data);
@@ -285,6 +288,9 @@ export default {
       
       // 変更があったデータストアだけPUT
       if (warningsUpdated && warningsData) {
+        // KVの肥大化を防ぐため、論理削除(isCancelled)されてから48時間経過した古いデータは物理削除する
+        const twoDaysAgo = Date.now() - 48 * 60 * 60 * 1000;
+        warningsData = warningsData.filter(w => !(w.isCancelled && new Date(w.reportDateTime).getTime() < twoDaysAgo));
         await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
       }
       if (earthquakesUpdated && earthquakesData) {
@@ -400,7 +406,8 @@ export default {
 
         
         const messagesToSend = [];
-        for (const entry of newEntries.reverse()) {
+        // リアルタイム性重視のため、ATOMフィードの並び順（新しい順）のまま処理する
+        for (const entry of newEntries) {
           const id = entry.id;
           const updated = entry.updated;
           const link = entry.link?.['@_href'];
@@ -432,10 +439,9 @@ export default {
               state.total = messagesToSend.length;
               state.items = messagesToSend;
             } else {
-              // Append to existing queue
+              // 新しいデータを優先して処理するため、キューの先頭に追加(LIFO)
               state.total = (state.total || 0) + messagesToSend.length;
-              syncQueue.push(...messagesToSend);
-              state.items = syncQueue;
+              state.items = [...messagesToSend, ...syncQueue];
             }
             await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
           } catch(e) {
@@ -565,12 +571,27 @@ export default {
               else level = 'advisory';
             }
 
-            // 1. 「解除」の場合：配列から削除する（非表示）
+            // 1. 「解除」の場合：配列から直接削除せず、isCancelledフラグを立てて論理削除とする
+            // これにより「新しい解除」が先に処理され、後から「古い発表」が来ても時系列比較で弾ける
             if (kindName.includes('解除') || kindName === 'なし' || kind.Status === '解除') {
+              let found = false;
               for (let i = warningsData.length - 1; i >= 0; i--) {
                 if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
-                  warningsData.splice(i, 1);
+                  found = true;
+                  const existingDate = new Date(warningsData[i].reportDateTime).getTime();
+                  const newDate = new Date(reportDateTime).getTime();
+                  // 既存のデータより新しい解除情報の場合のみ更新
+                  if (newDate >= existingDate) {
+                    warningsData[i].isCancelled = true;
+                    warningsData[i].reportDateTime = reportDateTime;
+                  }
                 }
+              }
+              // まだDBにないが、未来の解除情報が先に来た場合はダミーとして登録しておく
+              if (!found) {
+                warningsData.push({
+                  id, region, reportDateTime, infoType, warningName: wName, level, areaType, prefecture, status, isCancelled: true
+                });
               }
               continue;
             }
@@ -580,17 +601,32 @@ export default {
               continue;
             }
 
-            // 2. 「発表」またはそれ以外の場合：DB(配列)に追加
-            // 同じ警報が既にある場合は重複を防ぐため削除してから追加する
-            for (let i = warningsData.length - 1; i >= 0; i--) {
-              if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
-                warningsData.splice(i, 1);
-              }
+          // 2. 「発表」またはそれ以外の場合：DB(配列)に追加
+          // 同じ警報が既にある場合は重複を防ぐため削除してから追加する
+          let existingIndex = -1;
+          for (let i = warningsData.length - 1; i >= 0; i--) {
+            if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
+              existingIndex = i;
+              break;
             }
+          }
+
+          if (existingIndex >= 0) {
+            const existingDate = new Date(warningsData[existingIndex].reportDateTime).getTime();
+            const newDate = new Date(reportDateTime).getTime();
+            
+            if (newDate < existingDate) {
+               continue; // 新しいデータ（または解除）がすでにあるなら、古いデータでの上書きを防ぐ
+            }
+            
+            // 既存データを更新 (解除フラグを落とす)
+            warningsData[existingIndex] = { ...warningsData[existingIndex], xmlId, reportDateTime, warningCode: kindCode || '', warningLevel: level, infoType, status, isCancelled: false };
+          } else {
             warningsData.push({
               xmlId, reportDateTime, region, prefecture, areaType, 
-              warningCode: kindCode || '', warningName: wName, warningLevel: level, infoType, status
+              warningCode: kindCode || '', warningName: wName, warningLevel: level, infoType, status, isCancelled: false
             });
+          }
           }
         }
       }
