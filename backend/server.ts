@@ -86,19 +86,37 @@ async function runBackgroundSync() {
     
     hasInitialSyncRun = true;
 
-    const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+    let state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
     if (state.items && state.items.length > 0) {
-        console.log(`[Sync] Processing ${state.items.length} items without CPU limits...`);
-        // In Express we can process everything at once. 
-        // Logic.processQueueAdaptive expects syncQueue array. It will mutate it.
-        const itemsToProcess = state.items;
-        // We pass a very large maxXmlLengthOpt so it doesn't throttle
-        const processed = await Logic.processQueueAdaptive(itemsToProcess, env as any, ctx, 999999999);
+        console.log(`[Sync] Processing ${state.items.length} items...`);
+        let totalProcessed = 0;
         
-        // Update the remaining queue
-        state.items = itemsToProcess;
-        await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
-        console.log(`[Sync] Processing complete! Processed ${processed} items.`);
+        while (state.items.length > 0) {
+            // 50件ずつ処理して進捗を保存する（フロントエンドのプログレスバーを動かすため）
+            const batchSize = Math.min(50, state.items.length);
+            const batch = state.items.splice(0, batchSize);
+            
+            const processed = await Logic.processQueueAdaptive(batch, env as any, ctx, 500000 * 10);
+            
+            // 処理しきれなかったものがあれば先頭に戻す
+            if (batch.length > 0) {
+                state.items.unshift(...batch);
+            }
+            
+            // Poison pill対策: 1件も処理できず、かつバッチが減らない場合は先頭を捨てる
+            if (processed === 0 && batch.length === batchSize) {
+                state.items.shift();
+            }
+            
+            totalProcessed += processed;
+            
+            // 途中経過を保存
+            await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
+            
+            // ちょっとだけ待機してCPUとネットワークを休ませる
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        console.log(`[Sync] Processing complete! Processed ${totalProcessed} items.`);
     } else {
         // console.log('[Sync] No new items.');
     }
