@@ -596,11 +596,6 @@ export default {
               continue;
             }
 
-            // 3. 「継続」の場合：処理をスキップ（何もしない）
-            if (kind.Status === '継続') {
-              continue;
-            }
-
           // 2. 「発表」またはそれ以外の場合：DB(配列)に追加
           // 同じ警報が既にある場合は重複を防ぐため削除してから追加する
           let existingIndex = -1;

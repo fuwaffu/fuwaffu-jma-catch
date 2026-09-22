@@ -61,14 +61,17 @@ app.get('/api/status', async (req, res) => {
 });
 
 let isSyncingNow = false;
+let hasInitialSyncRun = false;
 
 async function runBackgroundSync() {
   if (isSyncingNow) return;
   isSyncingNow = true;
   try {
-    console.log('[Sync] Checking for new JMA data...');
+    const isInitial = !hasInitialSyncRun;
+    console.log(`[Sync] Checking for new JMA data... (isInitial: ${isInitial})`);
     // updateJmaData fetches the feeds and populates the sync queue
-    await Logic.updateJmaData(env as any, false);
+    await Logic.updateJmaData(env as any, isInitial);
+    hasInitialSyncRun = true;
 
     const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
     if (state.items && state.items.length > 0) {
