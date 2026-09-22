@@ -419,26 +419,6 @@ export default function ObsApp() {
       {/* 背景地図 */}
       <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
       
-      {syncStatus.isSyncing && (
-        <div style={{
-          position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 2000,
-          backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff', padding: '12px 24px', borderRadius: '9999px',
-          display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 0 15px rgba(255,255,255,0.2)',
-          border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', fontWeight: 'bold',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            position: 'absolute', top: 0, left: 0, bottom: 0,
-            width: `${syncStatus.progress}%`,
-            backgroundColor: 'rgba(37, 99, 235, 0.6)',
-            transition: 'width 0.3s ease-out',
-            zIndex: 0
-          }} />
-          <i className="fa-solid fa-arrows-rotate fa-spin" style={{ zIndex: 1 }}></i>
-          <span style={{ zIndex: 1 }}>情報整理中... {syncStatus.progress}%</span>
-        </div>
-      )}
-
       {/* グラデーションオーバーレイ (情報が見やすいように) */}
       <div style={{
         position: 'absolute',

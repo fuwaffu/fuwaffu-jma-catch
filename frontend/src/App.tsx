@@ -172,25 +172,6 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', padding: '16px', backgroundColor: '#f1f5f9', color: '#0f172a' }}>
       <div style={{ maxWidth: '1152px', margin: '0 auto', position: 'relative' }}>
-        {syncStatus.isSyncing && (
-          <div style={{
-            position: 'absolute', top: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 2000,
-            backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff', padding: '16px 32px', borderRadius: '9999px',
-            display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(12px)', fontSize: '1.25rem', fontWeight: 'bold',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              position: 'absolute', top: 0, left: 0, bottom: 0,
-              width: `${syncStatus.progress}%`,
-              backgroundColor: 'rgba(37, 99, 235, 0.6)',
-              transition: 'width 0.3s ease-out',
-              zIndex: 0
-            }} />
-            <i className="fa-solid fa-arrows-rotate fa-spin" style={{ zIndex: 1 }}></i>
-            <span style={{ zIndex: 1 }}>情報整理中... {syncStatus.progress}%</span>
-          </div>
-        )}
         
         <header style={{ 
           background: 'rgba(255, 255, 255, 0.65)', 
