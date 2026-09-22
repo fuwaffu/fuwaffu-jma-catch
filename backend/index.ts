@@ -134,25 +134,30 @@ export default {
       }
 
       if (url.pathname === "/api/sync-step") {
-        const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
-        let syncQueue: any[] = state.items || [];
-        const total = state.total || 0;
-        
-        if (syncQueue.length === 0) {
-            return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        try {
+          const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+          let syncQueue: any[] = state.items || [];
+          const total = state.total || 0;
+          
+          if (syncQueue.length === 0) {
+              return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          
+          const BATCH_SIZE = 3;
+          const messages = syncQueue.splice(0, BATCH_SIZE).map((msg: any) => ({ body: msg }));
+          const batch = { messages };
+          await this.queue(batch, env, ctx);
+          
+          state.items = syncQueue;
+          await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
+          
+          const current = total - syncQueue.length;
+          const progress = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+          return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current, target: total }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } catch (stepErr: any) {
+          console.error('sync-step error:', stepErr);
+          return new Response(JSON.stringify({ ok: false, error: stepErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        
-        const BATCH_SIZE = 10;
-        const messages = syncQueue.splice(0, BATCH_SIZE).map((msg: any) => ({ body: msg }));
-        const batch = { messages };
-        await this.queue(batch, env, ctx);
-        
-        state.items = syncQueue;
-        await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
-        
-        const current = total - syncQueue.length;
-        const progress = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
-        return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current, target: total }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/sync-initial") {
