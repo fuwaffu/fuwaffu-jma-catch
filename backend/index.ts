@@ -194,10 +194,13 @@ export default {
   // 制限ギリギリまで適応的にキューを処理する
   // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
   async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext): Promise<number> {
-    const MAX_SUBREQUESTS = 30; // Workers制限50のうち余裕を持たせる（KV操作もサブリクエストを消費するため）
-    const CPU_BUDGET_MS = 4;    // CPU制限10msのうち余裕を持たせる(JSON.stringify等のオーバーヘッド考慮)
+    const MAX_SUBREQUESTS = 30; // Workers制限50のうち余裕を持たせる
+    // Cloudflare Workersでは同期処理中にDate.now()が進まないため、CPU時間の正確な計測が不可能。
+    // 代わりにパースしたXML文字列の合計長(バイト数)をCPU消費の目安(プロキシ)として用いる。
+    // 目安: fast-xml-parserは500KBあたり数ms消費する。上限を500KBとする。
+    const MAX_XML_LENGTH_PER_BATCH = 500000; 
     let processed = 0;
-    let cpuEstimate = 0; // パース処理のCPU時間の推定値(ms)
+    let totalXmlLength = 0;
     
     // 必要なデータストアを先にロード（スマートGET）
     let warningsData: any[] | null = null;
@@ -209,10 +212,10 @@ export default {
     
     try {
       while (syncQueue.length > 0 && processed < MAX_SUBREQUESTS) {
-        // CPU予算チェック: 過去の平均パース時間から次の1件分を処理可能か判定
-        const avgCpuPerItem = processed > 0 ? cpuEstimate / processed : 2; // 初期推定2ms/件
-        if (cpuEstimate + avgCpuPerItem > CPU_BUDGET_MS && processed > 0) {
-          console.log(`[Adaptive] CPU budget reached: ${cpuEstimate.toFixed(1)}ms used, stopping after ${processed} items`);
+        // CPU予算チェック (XML文字列長の合計で判定)
+        // すでに上限を超えていたら次のリクエストに回す
+        if (totalXmlLength > MAX_XML_LENGTH_PER_BATCH && processed > 0) {
+          console.log(`[Adaptive] XML length budget reached: ${totalXmlLength} bytes used, stopping after ${processed} items`);
           break;
         }
         
@@ -228,19 +231,18 @@ export default {
           }
           const xmlText = await xmlRes.text();
           
-          // サイズが大きすぎるファイル(Poison Pill)はパースすると10ms制限を超えてクラッシュし、
-          // 無限ループの原因になるためスキップする。目安として1.5MB (1,500,000 bytes)
-          if (xmlText.length > 1500000) {
-            console.warn(`[Adaptive] Skipping large file (size: ${xmlText.length} bytes): ${link}`);
+          // サイズが大きすぎるファイル(Poison Pill)はパースすると即座に10ms制限を超えてクラッシュするためスキップ。
+          // 500KB以上の単一ファイルは無料枠では安全にパースできない可能性が高い
+          if (xmlText.length > 600000) {
+            console.warn(`[Adaptive] Skipping extremely large file (size: ${xmlText.length} bytes): ${link}`);
             syncQueue.shift(); processed++; continue;
           }
           
-          // XMLパース (CPU集約: 時間を計測)
-          const parseStart = Date.now();
+          // XML長を加算
+          totalXmlLength += xmlText.length;
+          
+          // XMLパース (CPU集約)
           const xmlData = parser.parse(xmlText);
-          const parseDuration = Date.now() - parseStart;
-          // Date.now()はwall timeだがパース中はCPU-boundなのでCPU時間の近似として利用
-          cpuEstimate += Math.max(parseDuration, 0.5); // 最低0.5ms
           
           const report = xmlData.Report;
           if (!report) { syncQueue.shift(); processed++; continue; }
@@ -288,7 +290,7 @@ export default {
         await invalidateApiCaches();
       }
       
-      console.log(`[Adaptive] Processed ${processed} items, CPU estimate: ${cpuEstimate.toFixed(1)}ms, remaining: ${syncQueue.length}`);
+      console.log(`[Adaptive] Processed ${processed} items, total XML length: ${totalXmlLength} bytes, remaining: ${syncQueue.length}`);
     } catch (queueErr) {
       await env.WEATHER_DATA_STORE.put('debug_queue_error', String(queueErr));
       console.error('[Adaptive] Error:', queueErr);
