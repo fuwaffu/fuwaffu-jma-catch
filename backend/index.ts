@@ -143,8 +143,18 @@ export default {
               return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           
+          const maxXmlLengthOpt = url.searchParams.has('maxXmlLength') ? parseInt(url.searchParams.get('maxXmlLength') as string, 10) : undefined;
+          const skipOpt = url.searchParams.has('skip') ? parseInt(url.searchParams.get('skip') as string, 10) : 0;
+          
+          if (skipOpt > 0) {
+              for (let i = 0; i < skipOpt && syncQueue.length > 0; i++) {
+                  console.warn(`[Adaptive] Skipping poison pill item by client request: ${syncQueue[0].link}`);
+                  syncQueue.shift();
+              }
+          }
+          
           // 制限ギリギリまで処理: 逐次処理しながら時間を計測
-          const processed = await this.processQueueAdaptive(syncQueue, env, ctx);
+          const processed = await this.processQueueAdaptive(syncQueue, env, ctx, maxXmlLengthOpt);
           
           state.items = syncQueue;
           await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
@@ -193,12 +203,10 @@ export default {
 
   // 制限ギリギリまで適応的にキューを処理する
   // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
-  async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext): Promise<number> {
+  async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext, maxXmlLengthOpt?: number): Promise<number> {
     const MAX_SUBREQUESTS = 30; // Workers制限50のうち余裕を持たせる
-    // Cloudflare Workersでは同期処理中にDate.now()が進まないため、CPU時間の正確な計測が不可能。
-    // 代わりにパースしたXML文字列の合計長(バイト数)をCPU消費の目安(プロキシ)として用いる。
-    // 目安: fast-xml-parserは500KBあたり数ms消費する。上限を500KBとする。
-    const MAX_XML_LENGTH_PER_BATCH = 500000; 
+    // クライアントからの指定があればそれを使用、なければ500KB
+    const MAX_XML_LENGTH_PER_BATCH = maxXmlLengthOpt || 500000; 
     let processed = 0;
     let totalXmlLength = 0;
     
