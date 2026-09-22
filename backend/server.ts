@@ -79,11 +79,6 @@ async function runBackgroundSync() {
     // updateJmaData fetches the feeds and populates the sync queue
     await Logic.updateJmaData(env as any, isInitial);
     
-    // ハイブリッド同期：JSONから最新の絶対状態を取得して古いデータをパージする
-    if (isInitial) {
-      await syncMapJsonState(env as any);
-    }
-    
     hasInitialSyncRun = true;
 
     let state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
@@ -115,6 +110,10 @@ async function runBackgroundSync() {
     } else {
         // console.log('[Sync] No new items.');
     }
+
+    // すべてのXML処理が終わった後に、map.json（絶対正解）を元に古い警報をパージする
+    // 起動時だけでなく、毎回の同期サイクルで実行してゾンビ化を完全に防ぐ
+    await syncMapJsonState(env as any);
   } catch (e) {
     console.error('[Sync Error]', e);
   } finally {
