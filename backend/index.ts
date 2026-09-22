@@ -143,17 +143,15 @@ export default {
               return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           
-          const BATCH_SIZE = 3;
-          const messages = syncQueue.splice(0, BATCH_SIZE).map((msg: any) => ({ body: msg }));
-          const batch = { messages };
-          await this.queue(batch, env, ctx);
+          // 制限ギリギリまで処理: 逐次処理しながら時間を計測
+          const processed = await this.processQueueAdaptive(syncQueue, env, ctx);
           
           state.items = syncQueue;
           await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
           
           const current = total - syncQueue.length;
           const progress = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
-          return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current, target: total }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current, target: total, batchProcessed: processed }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (stepErr: any) {
           console.error('sync-step error:', stepErr);
           return new Response(JSON.stringify({ ok: false, error: stepErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -188,74 +186,108 @@ export default {
     return new Response("Not Found", { status: 404, headers: corsHeaders });
   },
 
-
+  // Cloudflare Queue consumer (現在は使用せず、processQueueAdaptiveに移行済み)
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
-    try {
-      console.log('QUEUE STARTED, batch size:', batch.messages.length);
-      
-      // Smart KV fetch: only load datasets that are actually needed
-      const hasVPWW = batch.messages.some((m: any) => m.body.telegramCode === 'VPWW');
-      const hasVXSE = batch.messages.some((m: any) => m.body.telegramCode === 'VXSE');
-      const hasVPTW = batch.messages.some((m: any) => m.body.telegramCode === 'VPTW');
-      
-      let warningsData: any[] = hasVPWW ? (await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || []) : [];
-      let earthquakesData: any[] = hasVXSE ? (await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || []) : [];
-      let typhoonsData: any[] = hasVPTW ? (await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || []) : [];
+    // no-op: キュー処理はprocessQueueAdaptiveで行う
+  },
 
+  // 制限ギリギリまで適応的にキューを処理する
+  // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
+  async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext): Promise<number> {
+    const MAX_SUBREQUESTS = 45; // Workers制限50のうち余裕を持たせる
+    const CPU_BUDGET_MS = 8;    // CPU制限10msのうち余裕を持たせる
+    let processed = 0;
+    let cpuEstimate = 0; // パース処理のCPU時間の推定値(ms)
+    
+    // 必要なデータストアを先にロード（スマートGET）
+    let warningsData: any[] | null = null;
+    let earthquakesData: any[] | null = null;
+    let typhoonsData: any[] | null = null;
     let warningsUpdated = false;
     let earthquakesUpdated = false;
     let typhoonsUpdated = false;
-
-    // Parallel XML fetching for batch processing
-    await Promise.all(batch.messages.map(async (msg: any) => {
-       const { id, link, updated, telegramCode } = msg.body;
-       try {
-           const xmlRes = await fetch(link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
-           if (!xmlRes.ok) return;
-           const xmlText = await xmlRes.text();
-           const xmlData = parser.parse(xmlText);
-
-           const report = xmlData.Report;
-           if (!report) return;
-
-           const status = report.Control?.Status;
-           if (status !== '通常') return;
-
-           const infoType = report.Head?.InfoType;
-           const reportDateTime = report.Head?.ReportDateTime;
-
-           if (telegramCode === 'VPWW') {
-             this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
-             warningsUpdated = true;
-           } else if (telegramCode === 'VXSE') {
-             this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
-             earthquakesUpdated = true;
-           } else if (telegramCode === 'VPTW') {
-             this.processTyphoonToMemory(report, id, updated, typhoonsData);
-             typhoonsUpdated = true;
-           }
-       } catch (e) {
-           console.error('Failed to process message for id: ' + id, e);
-       }
-    }));
-
-    if (warningsUpdated) {
+    
+    try {
+      while (syncQueue.length > 0 && processed < MAX_SUBREQUESTS) {
+        // CPU予算チェック: 過去の平均パース時間から次の1件分を処理可能か判定
+        const avgCpuPerItem = processed > 0 ? cpuEstimate / processed : 2; // 初期推定2ms/件
+        if (cpuEstimate + avgCpuPerItem > CPU_BUDGET_MS && processed > 0) {
+          console.log(`[Adaptive] CPU budget reached: ${cpuEstimate.toFixed(1)}ms used, stopping after ${processed} items`);
+          break;
+        }
+        
+        const item = syncQueue[0]; // peek (まだ消さない)
+        const { id, link, updated, telegramCode } = item;
+        
+        try {
+          // XML取得 (I/O: CPU時間に含まれない)
+          const xmlRes = await fetch(link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+          if (!xmlRes.ok) {
+            syncQueue.shift(); processed++;
+            continue;
+          }
+          const xmlText = await xmlRes.text();
+          
+          // XMLパース (CPU集約: 時間を計測)
+          const parseStart = Date.now();
+          const xmlData = parser.parse(xmlText);
+          const parseDuration = Date.now() - parseStart;
+          // Date.now()はwall timeだがパース中はCPU-boundなのでCPU時間の近似として利用
+          cpuEstimate += Math.max(parseDuration, 0.5); // 最低0.5ms
+          
+          const report = xmlData.Report;
+          if (!report) { syncQueue.shift(); processed++; continue; }
+          
+          const status = report.Control?.Status;
+          if (status !== '通常') { syncQueue.shift(); processed++; continue; }
+          
+          const infoType = report.Head?.InfoType;
+          const reportDateTime = report.Head?.ReportDateTime;
+          
+          // データストアの遅延ロード（初回のみKVからGET）
+          if (telegramCode === 'VPWW') {
+            if (warningsData === null) warningsData = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
+            warningsUpdated = true;
+          } else if (telegramCode === 'VXSE') {
+            if (earthquakesData === null) earthquakesData = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
+            this.processEarthquakeToMemory(report, id, infoType, earthquakesData);
+            earthquakesUpdated = true;
+          } else if (telegramCode === 'VPTW') {
+            if (typhoonsData === null) typhoonsData = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
+            this.processTyphoonToMemory(report, id, updated, typhoonsData);
+            typhoonsUpdated = true;
+          }
+        } catch (e) {
+          console.error('Failed to process id: ' + id, e);
+        }
+        
+        syncQueue.shift(); // 正常完了 → キューから除去
+        processed++;
+      }
+      
+      // 変更があったデータストアだけPUT
+      if (warningsUpdated && warningsData) {
         await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
-    }
-    if (earthquakesUpdated) {
+      }
+      if (earthquakesUpdated && earthquakesData) {
         await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
-    }
-    if (typhoonsUpdated) {
+      }
+      if (typhoonsUpdated && typhoonsData) {
         await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
-    }
-
-    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
+      }
+      if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
         await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
         await invalidateApiCaches();
-    }
+      }
+      
+      console.log(`[Adaptive] Processed ${processed} items, CPU estimate: ${cpuEstimate.toFixed(1)}ms, remaining: ${syncQueue.length}`);
     } catch (queueErr) {
-       await env.WEATHER_DATA_STORE.put('debug_queue_error', String(queueErr));
+      await env.WEATHER_DATA_STORE.put('debug_queue_error', String(queueErr));
+      console.error('[Adaptive] Error:', queueErr);
     }
+    
+    return processed;
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -266,19 +298,16 @@ export default {
     // 1. フィードをチェックして新着があればキューに追加
     await this.updateJmaData(env);
     
-    // 2. キューに残りがあれば自動的にバッチ処理（ユーザーアクセス不要）
+    // 2. キューに残りがあれば適応的にバッチ処理（ユーザーアクセス不要）
     const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
     let syncQueue: any[] = state.items || [];
     
     if (syncQueue.length > 0) {
-      const CRON_BATCH_SIZE = 3;
-      const messages = syncQueue.splice(0, CRON_BATCH_SIZE).map((msg: any) => ({ body: msg }));
-      const batch = { messages };
       try {
-        await this.queue(batch, env, ctx);
+        const processed = await this.processQueueAdaptive(syncQueue, env, ctx);
         state.items = syncQueue;
         await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
-        console.log(`[Cron] Processed ${messages.length} items, ${syncQueue.length} remaining`);
+        console.log(`[Cron] Adaptive processed ${processed} items, ${syncQueue.length} remaining`);
       } catch (e) {
         console.error('[Cron] Batch processing error:', e);
       }
