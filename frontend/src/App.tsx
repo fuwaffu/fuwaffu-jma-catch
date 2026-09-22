@@ -67,8 +67,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let intervalId: any;
+    let timeoutId: any;
     let isProcessing = false;
+    let consecutiveErrors = 0;
+
     const checkStatus = async () => {
       if (isProcessing) return;
       isProcessing = true;
@@ -79,9 +81,18 @@ export default function App() {
         
         if (data.isSyncing) {
             console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
+            
+            // コールドタイム: APIの過負荷を防ぐためのインターバル
+            const cooldown = consecutiveErrors > 0 ? 5000 : 1000;
+            await new Promise(resolve => setTimeout(resolve, cooldown));
+
             // Poll sync-step to process the backend KV queue (batch of up to 10)
             const stepRes = await fetch(`${API_BASE}/api/sync-step`);
+            if (!stepRes.ok) throw new Error(`HTTP error! status: ${stepRes.status}`);
+            
             const stepData = await stepRes.json();
+            consecutiveErrors = 0; // 成功したらエラーリセット
+            
             if (stepData.ok) {
                 setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
                 if (!stepData.isSyncing) {
@@ -92,13 +103,16 @@ export default function App() {
         }
       } catch (e) {
         console.error('[Sync Status Error]', e);
+        consecutiveErrors++;
       } finally {
         isProcessing = false;
+        // 連続エラーが多い場合はインターバルを伸ばす
+        const nextPoll = consecutiveErrors > 0 ? Math.min(10000, 3000 * consecutiveErrors) : 3000;
+        timeoutId = setTimeout(checkStatus, nextPoll);
       }
     };
     checkStatus();
-    intervalId = setInterval(checkStatus, 3000);
-    return () => clearInterval(intervalId);
+    return () => clearTimeout(timeoutId);
   }, []);
 
   // viewModeに合致するデータだけをフィルタリング
