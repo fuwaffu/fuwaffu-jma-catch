@@ -230,11 +230,6 @@ export default {
     return new Response("Not Found", { status: 404, headers: corsHeaders });
   },
 
-  // Cloudflare Queue consumer (現在は使用せず、processQueueAdaptiveに移行済み)
-  async queue(batch: any, env: Env, ctx: ExecutionContext) {
-    // no-op: キュー処理はprocessQueueAdaptiveで行う
-  },
-
   // 制限ギリギリまで適応的にキューを処理する
   // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
   async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext, maxXmlLengthOpt?: number): Promise<number> {
