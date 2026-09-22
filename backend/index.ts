@@ -259,7 +259,30 @@ export default {
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(this.updateJmaData(env));
+    ctx.waitUntil(this.scheduledWork(env, ctx));
+  },
+
+  async scheduledWork(env: Env, ctx: ExecutionContext) {
+    // 1. フィードをチェックして新着があればキューに追加
+    await this.updateJmaData(env);
+    
+    // 2. キューに残りがあれば自動的にバッチ処理（ユーザーアクセス不要）
+    const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+    let syncQueue: any[] = state.items || [];
+    
+    if (syncQueue.length > 0) {
+      const CRON_BATCH_SIZE = 3;
+      const messages = syncQueue.splice(0, CRON_BATCH_SIZE).map((msg: any) => ({ body: msg }));
+      const batch = { messages };
+      try {
+        await this.queue(batch, env, ctx);
+        state.items = syncQueue;
+        await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
+        console.log(`[Cron] Processed ${messages.length} items, ${syncQueue.length} remaining`);
+      } catch (e) {
+        console.error('[Cron] Batch processing error:', e);
+      }
+    }
   },
 
   async updateJmaData(env: Env, isInitialSync = false) {
