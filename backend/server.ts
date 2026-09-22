@@ -92,8 +92,8 @@ async function runBackgroundSync() {
         let totalProcessed = 0;
         
         while (state.items.length > 0) {
-            // 50件ずつ処理して進捗を保存する（フロントエンドのプログレスバーを動かすため）
-            const batchSize = Math.min(50, state.items.length);
+            // 200件ずつ処理して進捗を保存する
+            const batchSize = Math.min(200, state.items.length);
             const batch = state.items.splice(0, batchSize);
             
             const processed = await Logic.processQueueAdaptive(batch, env as any, ctx, 500000 * 10);
@@ -113,8 +113,8 @@ async function runBackgroundSync() {
             // 途中経過を保存
             await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
             
-            // ちょっとだけ待機してCPUとネットワークを休ませる
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // 少しだけ待機 (気象庁サーバーへの負荷軽減とCPUの息継ぎ)
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
         console.log(`[Sync] Processing complete! Processed ${totalProcessed} items.`);
     } else {
