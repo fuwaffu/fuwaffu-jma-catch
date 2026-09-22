@@ -14,6 +14,38 @@ const OFFICE_CODE_TO_PREF: Record<string, string> = {
   "471000": "沖縄県", "472000": "沖縄県", "473000": "沖縄県", "474000": "沖縄県"
 };
 
+const WARNING_CODES: Record<string, { name: string; level: string; color: string }> = {
+  '33': { name: '大雨特別警報', level: 'special', color: '#8B008B' },
+  '35': { name: '暴風特別警報', level: 'special', color: '#8B008B' },
+  '32': { name: '暴風雪特別警報', level: 'special', color: '#8B008B' },
+  '36': { name: '大雪特別警報', level: 'special', color: '#8B008B' },
+  '37': { name: '波浪特別警報', level: 'special', color: '#8B008B' },
+  '38': { name: '高潮特別警報', level: 'special', color: '#8B008B' },
+  '03': { name: '大雨警報', level: 'warning', color: '#FF2800' },
+  '04': { name: '洪水警報', level: 'warning', color: '#FF2800' },
+  '05': { name: '暴風警報', level: 'warning', color: '#FF2800' },
+  '06': { name: '暴風雪警報', level: 'warning', color: '#FF2800' },
+  '07': { name: '大雪警報', level: 'warning', color: '#FF2800' },
+  '08': { name: '波浪警報', level: 'warning', color: '#FF2800' },
+  '09': { name: '高潮警報', level: 'warning', color: '#FF2800' },
+  '10': { name: '大雨注意報', level: 'advisory', color: '#FFD700' },
+  '13': { name: '洪水注意報', level: 'advisory', color: '#FFD700' },
+  '14': { name: '雷注意報', level: 'advisory', color: '#FFD700' },
+  '15': { name: '強風注意報', level: 'advisory', color: '#FFD700' },
+  '16': { name: '風雪注意報', level: 'advisory', color: '#FFD700' },
+  '17': { name: '大雪注意報', level: 'advisory', color: '#FFD700' },
+  '18': { name: '濃霧注意報', level: 'advisory', color: '#FFD700' },
+  '19': { name: '波浪注意報', level: 'advisory', color: '#FFD700' },
+  '20': { name: '高潮注意報', level: 'advisory', color: '#FFD700' },
+  '21': { name: 'なだれ注意報', level: 'advisory', color: '#FFD700' },
+  '22': { name: '着氷注意報', level: 'advisory', color: '#FFD700' },
+  '23': { name: '着雪注意報', level: 'advisory', color: '#FFD700' },
+  '24': { name: '融雪注意報', level: 'advisory', color: '#FFD700' },
+  '25': { name: '霜注意報', level: 'advisory', color: '#FFD700' },
+  '26': { name: '低温注意報', level: 'advisory', color: '#FFD700' },
+  '27': { name: '乾燥注意報', level: 'advisory', color: '#FFD700' },
+};
+
 export function normalizePrefectureName(prefecture: string): string {
   if (prefecture.includes('地方') && (prefecture.includes('宗谷') || prefecture.includes('上川') || prefecture.includes('留萌') || prefecture.includes('網走') || prefecture.includes('北見') || prefecture.includes('紋別') || prefecture.includes('十勝') || prefecture.includes('釧路') || prefecture.includes('根室') || prefecture.includes('胆振') || prefecture.includes('日高') || prefecture.includes('石狩') || prefecture.includes('空知') || prefecture.includes('後志') || prefecture.includes('渡島') || prefecture.includes('檜山'))) {
     return '北海道';
@@ -384,15 +416,21 @@ export default {
            }
         }
 
+        const statusStr = await env.WEATHER_DATA_STORE.get('status');
+        const status = statusStr ? JSON.parse(statusStr) : {};
+        const lastUpdated = status.lastUpdated ? new Date(status.lastUpdated).getTime() : 0;
+
         if (isInitialSync) {
             const typhoons = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPTW'));
             const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
             const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].match(/_(VPWW|VXWW|VXXX)/));
             
+            // ユーザー指定通り、警報・地震・台風を全て取得する
+            // 初期同期でのAPIコール上限超過を防ぐため、警報は直近50件に制限
             candidateEntries = [
                 ...typhoons.slice(0, 2),
                 ...earthquakes.slice(0, 10),
-                ...warnings.slice(0, MAX_SUBREQUESTS - 12)
+                ...warnings.slice(0, 50)
             ].sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
         } else {
             candidateEntries = candidateEntries.slice(0, 150);
@@ -401,6 +439,11 @@ export default {
         const newEntries = [];
         for (const entry of candidateEntries) {
           if (processedFeedsSet.has(entry.id)) continue;
+          
+          // <updated>タイムスタンプによる差分判定 (l-telopスキル準拠)
+          const entryTime = new Date(entry.updated).getTime();
+          if (!isInitialSync && entryTime <= lastUpdated) continue;
+
           newEntries.push(entry);
         }
 
@@ -1012,6 +1055,77 @@ export default {
     }
   },
 
+  async syncMapJsonState(env: Env) {
+    try {
+      const [mapRes, areaRes] = await Promise.all([
+        fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
+        fetch('https://www.jma.go.jp/bosai/common/const/area.json')
+      ]);
+
+      if (!mapRes.ok || !areaRes.ok) return;
+
+      const mapData = await mapRes.json() as any;
+      const areaData = await areaRes.json() as any;
+
+      const areaCodeToName = (code: string) => {
+          if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
+          if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
+          if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
+          if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
+          if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
+          return code;
+      };
+      
+      const getPrefecture = (code: string) => {
+          if (areaData.class20s && areaData.class20s[code]) return normalizePrefectureName(areaData.class20s[code].parent);
+          if (areaData.class15s && areaData.class15s[code]) return normalizePrefectureName(areaData.class15s[code].parent);
+          if (areaData.class10s && areaData.class10s[code]) return normalizePrefectureName(areaData.class10s[code].parent);
+          return '';
+      }
+
+      let warningsData: any[] = [];
+      const reportDateTimeFallback = new Date().toISOString(); 
+
+      for (const report of mapData) {
+          if (!report.areaTypes) continue;
+          const rDate = report.reportDatetime || reportDateTimeFallback;
+          for (const areaTypeObj of report.areaTypes) {
+              for (const area of areaTypeObj.areas) {
+                  const areaCode = area.code;
+                  const regionName = areaCodeToName(areaCode);
+                  const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
+                  
+                  for (const w of area.warnings) {
+                      if (w.status === '発表' || w.status === '継続') {
+                          const warningCode = w.code;
+                          const wInfo = WARNING_CODES[warningCode];
+                          if (wInfo) {
+                              warningsData.push({
+                                  xmlId: `mapjson-${areaCode}-${warningCode}`,
+                                  reportDateTime: rDate,
+                                  region: regionName,
+                                  prefecture: prefecture,
+                                  areaType: 'class20s',
+                                  warningCode: warningCode,
+                                  warningName: wInfo.name,
+                                  warningLevel: wInfo.level,
+                                  infoType: '発表',
+                                  status: w.status,
+                                  isCancelled: false
+                              });
+                          }
+                      }
+                  }
+              }
+          }
+      }
+
+      await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
+    } catch (e) {
+      console.error('Failed syncMapJsonState', e);
+    }
+  },
+
   async syncInitialJmaData(env: Env) {
     let earthquakesData: any[] = [];
     try {
@@ -1031,14 +1145,16 @@ export default {
       console.error("Failed to fetch initial earthquakes", e);
     }
     
-    // 警報はXMLをベースに再構築するため、一旦空にしてprocessed_feedsもリセット
-    await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify([]));
+    // 警報はmap.jsonから完全構築するため一旦実行する
+    await this.syncMapJsonState(env);
+    
     await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
     await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify([]));
     await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify([]));
     await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
 
-    // XMLフィードから最新状態を構築 (isInitialSync = true)
+    // XMLフィードから地震と台風の最新状態を構築 (isInitialSync = true)
     await this.updateJmaData(env, true);
+
   }
 };
