@@ -203,8 +203,8 @@ export default {
       }
 
       if (url.pathname === "/api/sync-initial") {
-        await this.syncInitialJmaData(env);
-        return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        ctx.waitUntil(this.syncInitialJmaData(env));
+        return new Response(JSON.stringify({ ok: true, message: "Sync started in background" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/debug-kv") {
@@ -1160,6 +1160,7 @@ export default {
     await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
     await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify([]));
     await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify([]));
+    await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify({ items: [], total: 0 }));
     await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
 
     // XMLフィードから地震と台風の最新状態を構築 (isInitialSync = true)

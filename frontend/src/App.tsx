@@ -109,6 +109,8 @@ export default function App() {
 
   // viewModeに合致するデータだけをフィルタリング
   const filteredWarnings = warnings.filter((w: any) => {
+    if (w.isCancelled) return false;
+    
     if (viewMode === 'prefecture') return w.areaType === 'prefecture';
     if (viewMode === 'region') return w.areaType === 'region' || w.areaType === 'subregion';
     if (viewMode === 'municipality') {
