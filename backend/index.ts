@@ -79,7 +79,7 @@ async function cachedKvQuery(
   corsHeaders: Record<string, string>
 ): Promise<Response> {
   const cache = caches.default;
-  const cacheUrl = new URL(`https://cache-internal/${cacheKey}`);
+  const cacheUrl = new URL(`https://jma-dashboard.internal/cache/${cacheKey}`);
   const cacheRequest = new Request(cacheUrl.toString());
 
   const cached = await cache.match(cacheRequest);
@@ -118,7 +118,7 @@ async function invalidateApiCaches(): Promise<void> {
   const cache = caches.default;
   const keys = ['warnings', 'earthquakes', 'typhoons', 'status'];
   for (const key of keys) {
-    const cacheUrl = new URL(`https://cache-internal/${key}`);
+    const cacheUrl = new URL(`https://jma-dashboard.internal/cache/${key}`);
     await cache.delete(new Request(cacheUrl.toString()));
   }
 }
@@ -135,31 +135,90 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
-      if (url.pathname === "/api/warnings") return await cachedKvQuery('warnings', env, corsHeaders);
+      if (url.pathname === "/api/warnings") {
+          try {
+              const [mapRes, areaRes] = await Promise.all([
+                  fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
+                  fetch('https://www.jma.go.jp/bosai/common/const/area.json')
+              ]);
+              if (mapRes.ok && areaRes.ok) {
+                  const mapData = await mapRes.json() as any;
+                  const areaData = await areaRes.json() as any;
+                  
+                  const areaCodeToName = (code: string) => {
+                      if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
+                      if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
+                      if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
+                      if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
+                      if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
+                      return code;
+                  };
+                  
+                  const getPrefecture = (code: string) => {
+                      if (areaData.class20s && areaData.class20s[code]) return normalizePrefectureName(areaData.class20s[code].parent);
+                      if (areaData.class15s && areaData.class15s[code]) return normalizePrefectureName(areaData.class15s[code].parent);
+                      if (areaData.class10s && areaData.class10s[code]) return normalizePrefectureName(areaData.class10s[code].parent);
+                      return '';
+                  }
+                  
+                  let warningsData: any[] = [];
+                  const reportDateTimeFallback = new Date().toISOString(); 
+                  for (const report of mapData) {
+                      if (!report.areaTypes) continue;
+                      const rDate = report.reportDatetime || reportDateTimeFallback;
+                      for (const areaTypeObj of report.areaTypes) {
+                          for (const area of areaTypeObj.areas) {
+                              const areaCode = area.code;
+                              const regionName = areaCodeToName(areaCode);
+                              const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
+                              for (const w of area.warnings) {
+                                  if (w.status === '発表' || w.status === '継続') {
+                                      const warningCode = w.code;
+                                      const wInfo = WARNING_CODES[warningCode];
+                                      if (wInfo) {
+                                          warningsData.push({
+                                              xmlId: `mapjson-${areaCode}-${warningCode}`,
+                                              reportDateTime: rDate,
+                                              region: regionName,
+                                              prefecture: prefecture,
+                                              areaType: 'class20s',
+                                              warningCode: warningCode,
+                                              warningName: wInfo.name,
+                                              warningLevel: wInfo.level,
+                                              infoType: '発表',
+                                              status: w.status,
+                                              isCancelled: false
+                                          });
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  return new Response(JSON.stringify(warningsData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+              }
+          } catch (e: any) {
+              return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500, headers: corsHeaders });
+          }
+          // Fallback to KV if fetch fails (but KV is stale)
+          return await cachedKvQuery('warnings', env, corsHeaders);
+      }
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
       if (url.pathname === "/api/status") {
-        let status: any = { lastUpdated: null, isSyncing: false, progress: 0 };
+        let status: any = { lastUpdated: null };
         try {
           const raw = await env.WEATHER_DATA_STORE.get('status');
           if (raw) status = { ...status, ...JSON.parse(raw) };
-          const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
-          const remaining = (state.items || []).length;
-          const total = state.total || 0;
-          const current = total - remaining;
-          status.current = current;
-          status.target = total;
-          if (total > 0) {
-            status.isSyncing = remaining > 0;
-            status.progress = Math.min(100, Math.round((current / total) * 100));
-          } else {
-            status.isSyncing = false;
-            status.progress = 100;
-          }
-        } catch(e) {
-          console.error('Status error:', e);
-        }
+        } catch(e) {}
         return new Response(JSON.stringify(status), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      if (url.pathname === "/api/debug-clear") {
+          await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify([]));
+          await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
+          await invalidateApiCaches();
+          return new Response("Wiped KV warnings and cache", { headers: corsHeaders });
       }
       
       if (url.pathname === "/api/trigger-update") {
@@ -418,12 +477,10 @@ export default {
             const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
             const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].match(/_(VPWW|VXWW|VXXX)/));
             
-            // ユーザー指定通り、警報・地震・台風を全て取得する
-            // 初期同期でのAPIコール上限超過を防ぐため、警報は直近50件に制限
+            // 初期同期では、警報はmap.jsonで完璧に取得済みのため、XMLからの過去警報の取得はスキップする（解除漏れを防ぐため）
             candidateEntries = [
                 ...typhoons.slice(0, 2),
-                ...earthquakes.slice(0, 10),
-                ...warnings.slice(0, 50)
+                ...earthquakes.slice(0, 10)
             ].sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
         } else {
             candidateEntries = candidateEntries.slice(0, 150);
@@ -467,25 +524,47 @@ export default {
 
         if (messagesToSend.length > 0) {
           try {
-            const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
-            let syncQueue: any[] = state.items || [];
-            const remaining = syncQueue.length;
+            let warningsData = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+            let earthquakesData = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
+            let typhoonsData = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
             
-            if (remaining === 0) {
-              // Previous sync complete, start fresh
-              state.total = messagesToSend.length;
-              state.items = messagesToSend;
-            } else {
-              // 新しいデータを優先して処理するため、キューの先頭に追加(LIFO)
-              // 重複を排除してから追加する
-              const existingIds = new Set(syncQueue.map(i => i.id));
-              const uniqueMessages = messagesToSend.filter(m => !existingIds.has(m.id));
-              state.total = (state.total || 0) + uniqueMessages.length;
-              state.items = [...uniqueMessages, ...syncQueue];
+            for (const msg of messagesToSend) {
+                const xmlRes = await fetch(msg.link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+                if (!xmlRes.ok) continue;
+                const xmlText = await xmlRes.text();
+                const xmlData = parser.parse(xmlText);
+                const report = xmlData.Report;
+                if (!report) continue;
+                const status = report.Control?.Status;
+                if (status !== '通常') continue;
+                const infoType = report.Head?.InfoType;
+                const reportDateTime = report.Head?.ReportDateTime;
+                
+                if (msg.telegramCode === 'VPWW') {
+                  this.processWarningToMemory(report, msg.id, reportDateTime, infoType, status, warningsData);
+                  warningsUpdated = true;
+                } else if (msg.telegramCode === 'VXSE') {
+                  this.processEarthquakeToMemory(report, msg.id, infoType, earthquakesData);
+                  earthquakesUpdated = true;
+                } else if (msg.telegramCode === 'VPTW') {
+                  this.processTyphoonToMemory(report, msg.id, msg.updated, typhoonsData);
+                  typhoonsUpdated = true;
+                }
             }
-            await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
+            
+            if (warningsUpdated) {
+                const twoDaysAgo = Date.now() - 48 * 60 * 60 * 1000;
+                warningsData = warningsData.filter((w: any) => !(w.isCancelled && new Date(w.reportDateTime).getTime() < twoDaysAgo));
+                await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
+            }
+            if (earthquakesUpdated) {
+                await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
+            }
+            if (typhoonsUpdated) {
+                await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
+            }
           } catch(e) {
-            console.error('Failed to update sync_state in KV', e);
+            console.error('Failed to process direct XMLs', e);
           }
         }
 
@@ -1160,6 +1239,6 @@ export default {
 
     // XMLフィードから地震と台風の最新状態を構築 (isInitialSync = true)
     await this.updateJmaData(env, true);
-
+    await invalidateApiCaches();
   }
 };
