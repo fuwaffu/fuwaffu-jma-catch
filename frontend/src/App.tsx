@@ -81,36 +81,10 @@ export default function App() {
         
         if (data.isSyncing) {
             console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
-            
-            // コールドタイム: APIの過負荷を防ぐためのインターバル
-            const cooldown = consecutiveErrors > 0 ? 5000 : 1000;
-            await new Promise(resolve => setTimeout(resolve, cooldown));
-
-            // エラーが続く場合は処理サイズ(maxXmlLength)を段階的に下げて10ms制限突破を試みる
-            // それでもダメな場合は単一ファイルが制限オーバー（毒リンゴ）なのでスキップする
-            let maxXmlLength = 500000;
-            let skip = 0;
-            if (consecutiveErrors === 1) maxXmlLength = 300000;
-            else if (consecutiveErrors === 2) maxXmlLength = 150000;
-            else if (consecutiveErrors === 3) maxXmlLength = 50000;
-            else if (consecutiveErrors >= 4) {
-                maxXmlLength = 50000;
-                skip = 1;
-            }
-
-            const stepRes = await fetch(`${API_BASE}/api/sync-step?maxXmlLength=${maxXmlLength}&skip=${skip}`);
-            if (!stepRes.ok) throw new Error(`HTTP error! status: ${stepRes.status}`);
-            
-            const stepData = await stepRes.json();
-            consecutiveErrors = 0; // 成功したらエラーリセット
-            
-            if (stepData.ok) {
-                setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
-                if (!stepData.isSyncing) {
-                    // Sync complete, refresh data
-                    fetchData();
-                }
-            }
+            // Render.comバックエンドが同期を完了するまで待つ
+        } else if (syncStatus.isSyncing) {
+            // 同期中だったのが完了に変わった場合、データを再取得
+            fetchData();
         }
       } catch (e) {
         console.error('[Sync Status Error]', e);

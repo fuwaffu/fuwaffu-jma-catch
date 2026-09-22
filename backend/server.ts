@@ -12,6 +12,7 @@ import { WEATHER_DATA_STORE } from './localKv';
 };
 
 import Logic from './index';
+import { syncMapJsonState } from './mapSync';
 
 const app = express();
 app.use(cors());
@@ -60,6 +61,12 @@ app.get('/api/status', async (req, res) => {
   res.json(status);
 });
 
+app.get('/api/trigger-update', (req, res) => {
+  // 1分間の定期実行を待たずに即座に強制同期を走らせる
+  runBackgroundSync().catch(console.error);
+  res.json({ ok: true, message: 'Sync triggered' });
+});
+
 let isSyncingNow = false;
 let hasInitialSyncRun = false;
 
@@ -71,6 +78,12 @@ async function runBackgroundSync() {
     console.log(`[Sync] Checking for new JMA data... (isInitial: ${isInitial})`);
     // updateJmaData fetches the feeds and populates the sync queue
     await Logic.updateJmaData(env as any, isInitial);
+    
+    // ハイブリッド同期：JSONから最新の絶対状態を取得して古いデータをパージする
+    if (isInitial) {
+      await syncMapJsonState(env as any);
+    }
+    
     hasInitialSyncRun = true;
 
     const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
