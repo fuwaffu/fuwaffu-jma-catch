@@ -207,7 +207,7 @@ export default {
   // 制限ギリギリまで適応的にキューを処理する
   // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
   async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext, maxXmlLengthOpt?: number): Promise<number> {
-    const MAX_SUBREQUESTS = 30; // Workers制限50のうち余裕を持たせる
+    const MAX_SUBREQUESTS = 99999; // Render.com 無制限
     // クライアントからの指定があればそれを使用、なければ500KB
     const MAX_XML_LENGTH_PER_BATCH = maxXmlLengthOpt || 500000; 
     let processed = 0;
@@ -351,7 +351,7 @@ export default {
     const processedFeedsSet = new Set(processedFeeds);
     
     let fetchCount = 0;
-    const MAX_SUBREQUESTS = 45; // Cloudflare limits to 50
+    const MAX_SUBREQUESTS = 99999; // Render.com 無制限
     let warningsUpdated = false;
     let earthquakesUpdated = false;
     let typhoonsUpdated = false;
@@ -590,7 +590,7 @@ export default {
               // まだDBにないが、未来の解除情報が先に来た場合はダミーとして登録しておく
               if (!found) {
                 warningsData.push({
-                  id, region, reportDateTime, infoType, warningName: wName, level, areaType, prefecture, status, isCancelled: true
+                  xmlId, region, reportDateTime, infoType, warningName: wName, level, areaType, prefecture, status, isCancelled: true
                 });
               }
               continue;

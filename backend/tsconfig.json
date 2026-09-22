@@ -1,10 +1,10 @@
 {
   "compilerOptions": {
     "target": "es2022",
-    "module": "es2022",
+    "module": "Node16",
     "lib": ["es2022"],
     "types": ["@cloudflare/workers-types"],
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

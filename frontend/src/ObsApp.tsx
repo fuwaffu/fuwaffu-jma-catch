@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 
 export default function ObsApp() {
   const [typhoons, setTyphoons] = useState<any[]>([]);
@@ -15,7 +15,7 @@ export default function ObsApp() {
     let intervalId;
     const checkStatus = async () => {
       try {
-        const res = await fetch('https://jma-dashboard-backend.fuwaffu.workers.dev/api/status');
+        const res = await fetch(`${API_BASE}/api/status`);
         const data = await res.json();
         setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
         if (data.lastUpdated) {
