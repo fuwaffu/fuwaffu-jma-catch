@@ -196,32 +196,35 @@ export default {
 
               const getHierarchyNames = (code: string) => {
                   let pref = '';
-                  let reg = '';
+                  let class10 = '';
+                  let class15 = '';
                   let muni = areaCodeToName(code);
                   
                   if (areaData.class20s && areaData.class20s[code]) {
                       const parent = areaData.class20s[code].parent;
                       if (areaData.class15s && areaData.class15s[parent]) {
-                          reg = areaData.class15s[parent].name;
+                          class15 = areaData.class15s[parent].name;
                           const c10 = areaData.class15s[parent].parent;
                           if (areaData.class10s && areaData.class10s[c10]) {
+                              class10 = areaData.class10s[c10].name;
                               const off = areaData.class10s[c10].parent;
                               if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                           }
                       } else if (areaData.class10s && areaData.class10s[parent]) {
-                          reg = areaData.class10s[parent].name;
+                          class10 = areaData.class10s[parent].name;
                           const off = areaData.class10s[parent].parent;
                           if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                       }
                   } else if (areaData.class15s && areaData.class15s[code]) {
-                      reg = areaData.class15s[code].name;
+                      class15 = areaData.class15s[code].name;
                       const c10 = areaData.class15s[code].parent;
                       if (areaData.class10s && areaData.class10s[c10]) {
+                          class10 = areaData.class10s[c10].name;
                           const off = areaData.class10s[c10].parent;
                           if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                       }
                   } else if (areaData.class10s && areaData.class10s[code]) {
-                      reg = areaData.class10s[code].name;
+                      class10 = areaData.class10s[code].name;
                       const off = areaData.class10s[code].parent;
                       if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                   } else if (areaData.offices && areaData.offices[code]) {
@@ -229,40 +232,39 @@ export default {
                   }
                   
                   pref = normalizePrefectureName(pref || OFFICE_CODE_TO_PREF[code] || '');
-                  reg = reg || pref;
-                  return { pref, reg, muni };
+                  return { pref, class10, class15, muni };
               };
               
               let warningsData: any[] = [];
               const reportDateTimeFallback = new Date().toISOString(); 
-              try {
+                            try {
                   for (const report of mapData) {
                       if (!report.areaTypes) continue;
                       const rDate = report.reportDatetime || reportDateTimeFallback;
                       for (const areaTypeObj of report.areaTypes) {
                           for (const area of areaTypeObj.areas) {
                               const areaCode = area.code;
-                              const { pref, reg, muni } = getHierarchyNames(areaCode);
+                              const { pref, class10, class15, muni } = getHierarchyNames(areaCode);
                               for (const w of area.warnings) {
                                   if (w.status === '発表' || w.status === '継続') {
                                       const warningCode = w.code;
                                       const wInfo = WARNING_CODES[warningCode];
                                       if (wInfo) {
-                                          const baseObj = {
+                                          warningsData.push({
                                               xmlId: `mapjson-${areaCode}-${warningCode}`,
                                               reportDateTime: rDate,
                                               prefecture: pref,
+                                              class10: class10,
+                                              class15: class15,
+                                              region: muni,
                                               warningCode: warningCode,
                                               warningName: wInfo.name,
                                               warningLevel: wInfo.level,
                                               infoType: '発表',
                                               status: w.status,
-                                              isCancelled: false
-                                          };
-                                          
-                                          if (pref) warningsData.push({ ...baseObj, region: pref, areaType: 'prefecture' });
-                                          if (reg) warningsData.push({ ...baseObj, region: reg, areaType: 'region' });
-                                          if (muni) warningsData.push({ ...baseObj, region: muni, parentRegion: reg, areaType: 'municipality' });
+                                              isCancelled: false,
+                                              areaType: 'municipality'
+                                          });
                                       }
                                   }
                               }

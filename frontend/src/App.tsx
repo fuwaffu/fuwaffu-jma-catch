@@ -122,13 +122,15 @@ export default function App() {
 
   // viewModeに合致するデータだけをフィルタリング
   const filteredWarnings = warnings.filter((w: any) => {
+    if (w.isCancelled) return false;
+    
     if (viewMode === 'municipality') {
       if (selectedParentArea) {
-        return w.areaType === 'municipality' && (w.parentRegion === selectedParentArea || w.prefecture === selectedParentArea);
+        return w.class10 === selectedParentArea || w.prefecture === selectedParentArea;
       }
       return false;
     } else {
-      return w.areaType === 'class1';
+      return true; // We fetch all municipalities and aggregate them in the render logic
     }
   });
 
@@ -317,7 +319,6 @@ export default function App() {
                     const PREFECTURES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
                     
                     if (viewMode === 'municipality') {
-                      // 市町村ビュー: 選択された親地域(一次細分区域)に属する市町村を表示
                       const items = Object.values(groupedWarnings).sort((a: any, b: any) => {
                         return new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime();
                       });
@@ -358,29 +359,24 @@ export default function App() {
                         </>
                       );
                     } else {
-                      // デフォルトビュー: 都道府県ごとに一次細分区域を表示
+                      // デフォルトビュー: 都道府県 > 一次細分区域
                       const prefGroups: Record<string, any[]> = {};
                       PREFECTURES.forEach(p => prefGroups[p] = []);
                       
                       Object.values(groupedWarnings).forEach((row: any) => {
-                        const pref = row.prefecture || row.area;
-                        if (prefGroups[pref]) {
-                          prefGroups[pref].push(row);
-                        } else {
-                          if (!prefGroups['その他']) prefGroups['その他'] = [];
-                          prefGroups['その他'].push(row);
-                        }
+                        const pref = row.prefecture || 'その他';
+                        if (!prefGroups[pref]) prefGroups[pref] = [];
+                        prefGroups[pref].push(row);
                       });
                       
                       return (
                         <>
-                          {PREFECTURES.map(pref => {
-                            const regions = prefGroups[pref] || [];
-                            if (regions.length === 0) return null; // 警報がない都道府県は非表示
+                          {PREFECTURES.concat(['その他']).map(pref => {
+                            const regions = prefGroups[pref];
+                            if (!regions || regions.length === 0) return null;
                             
-                            // Sort regions by reportDateTime
                             regions.sort((a: any, b: any) => new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime());
-
+                            
                             return (
                               <React.Fragment key={pref}>
                                 {/* 都道府県見出し */}
@@ -389,12 +385,13 @@ export default function App() {
                                     {pref}
                                   </td>
                                 </tr>
+                                
                                 {/* 一次細分区域のリスト */}
                                 {regions.map((row: any, i: number) => (
                                   <tr 
                                     key={row.area + '-' + i} 
                                     className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f1f5f9')}
                                     onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                                   >
                                     <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
@@ -407,7 +404,7 @@ export default function App() {
                                         textUnderlineOffset: '4px'
                                       }}
                                       onClick={() => {
-                                        setSelectedParentArea(row.area);
+                                        setSelectedParentArea(row.area); // row.area is class10
                                         setViewMode('municipality');
                                       }}
                                     >
