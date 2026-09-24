@@ -383,14 +383,20 @@ export default function App() {
                           <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
                             <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>{cat}</td>
                           </tr>
-                          {Object.entries(
-                            warningsByCategory[cat].reduce((acc: any, row: any) => {
-                              const p = row.prefecture || row.area;
-                              if (!acc[p]) acc[p] = [];
-                              acc[p].push(row);
-                              return acc;
-                            }, {})
-                          ).map(([pref, rows]: [string, any]) => (
+                            {Object.entries(
+                              warningsByCategory[cat].reduce((acc: any, row: any) => {
+                                const p = row.prefecture || row.area;
+                                if (!acc[p]) acc[p] = [];
+                                acc[p].push(row);
+                                return acc;
+                              }, {})
+                            )
+                            .sort(([prefA], [prefB]) => {
+                              const idxA = PREF_CATEGORY_MAP[cat]?.indexOf(prefA as string) ?? 999;
+                              const idxB = PREF_CATEGORY_MAP[cat]?.indexOf(prefB as string) ?? 999;
+                              return (idxA !== -1 ? idxA : 999) - (idxB !== -1 ? idxB : 999);
+                            })
+                            .map(([pref, rows]: [string, any]) => (
                             <React.Fragment key={pref}>
                               {(viewMode === 'prefecture' || viewMode === 'region') && pref !== cat && (
                                 <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>

@@ -187,42 +187,40 @@ export default {
               const getHierarchyNames = (code: string) => {
                   let pref = '';
                   let reg = '';
-                  let muni = '';
+                  let muni = areaCodeToName(code);
                   
                   if (areaData.class20s && areaData.class20s[code]) {
-                      muni = areaData.class20s[code].name;
-                      const c15 = areaData.class20s[code].parent;
-                      if (areaData.class15s && areaData.class15s[c15]) {
-                          const c10 = areaData.class15s[c15].parent;
+                      const parent = areaData.class20s[code].parent;
+                      if (areaData.class15s && areaData.class15s[parent]) {
+                          reg = areaData.class15s[parent].name;
+                          const c10 = areaData.class15s[parent].parent;
                           if (areaData.class10s && areaData.class10s[c10]) {
-                              reg = areaData.class10s[c10].name;
                               const off = areaData.class10s[c10].parent;
-                              if (areaData.offices && areaData.offices[off]) {
-                                  pref = areaData.offices[off].name;
-                              }
+                              if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                           }
+                      } else if (areaData.class10s && areaData.class10s[parent]) {
+                          reg = areaData.class10s[parent].name;
+                          const off = areaData.class10s[parent].parent;
+                          if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                       }
                   } else if (areaData.class15s && areaData.class15s[code]) {
+                      reg = areaData.class15s[code].name;
                       const c10 = areaData.class15s[code].parent;
                       if (areaData.class10s && areaData.class10s[c10]) {
-                          reg = areaData.class10s[c10].name;
                           const off = areaData.class10s[c10].parent;
-                          if (areaData.offices && areaData.offices[off]) {
-                              pref = areaData.offices[off].name;
-                          }
+                          if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                       }
                   } else if (areaData.class10s && areaData.class10s[code]) {
                       reg = areaData.class10s[code].name;
                       const off = areaData.class10s[code].parent;
-                      if (areaData.offices && areaData.offices[off]) {
-                          pref = areaData.offices[off].name;
-                      }
+                      if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
                   } else if (areaData.offices && areaData.offices[code]) {
                       pref = areaData.offices[code].name;
                   }
                   
                   pref = normalizePrefectureName(pref || OFFICE_CODE_TO_PREF[code] || '');
-                  return { pref, reg, muni: muni || code };
+                  reg = reg || pref;
+                  return { pref, reg, muni };
               };
               
               let warningsData: any[] = [];
