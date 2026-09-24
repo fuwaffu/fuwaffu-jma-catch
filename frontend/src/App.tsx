@@ -122,37 +122,17 @@ export default function App() {
 
   // viewModeに合致するデータだけをフィルタリング
   const filteredWarnings = warnings.filter((w: any) => {
-    if (w.isCancelled) return false;
-    
-    // バックエンドがmap.jsonから直接動的フェッチする仕様になったため、全てclass20s(市町村)で返ってきます
-    // 互換性維持のため、どのビューモードでもclass20sを表示するようにします
-    if (w.areaType === 'class20s') {
-      if (selectedParentArea && viewMode === 'municipality') {
-        return w.prefecture === selectedParentArea;
-      }
-      return true;
-    }
-    
-    if (viewMode === 'prefecture') return w.areaType === 'prefecture';
-    if (viewMode === 'region') return w.areaType === 'region' || w.areaType === 'subregion';
     if (viewMode === 'municipality') {
       if (selectedParentArea) {
-        return w.areaType === 'municipality' && (w.prefecture === selectedParentArea || w.parentRegion === selectedParentArea);
+        return w.areaType === 'municipality' && (w.parentRegion === selectedParentArea || w.prefecture === selectedParentArea);
       }
-      return w.areaType === 'municipality';
+      return false;
+    } else {
+      return w.areaType === 'class1';
     }
-    return false;
   });
 
   // 最新の発表日時のデータのみを地域ごとにグループ化
-  
-  const formatDate = (isoStr: string) => {
-    if (!isoStr) return '';
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return isoStr;
-    return `${d.getDate()}日 ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
-  };
-
   const groupedWarnings = Object.values(filteredWarnings.reduce((acc: any, w: any) => {
     const areaName = w.region || w.area;
     if (!acc[areaName] || new Date(w.reportDateTime) > new Date(acc[areaName].reportDateTime)) {
@@ -347,44 +327,48 @@ export default function App() {
                           {items.length === 0 && (
                             <tr><td colSpan={3} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>現在発表されている警報・注意報はありません</td></tr>
                           )}
-                          {items.map((g: any, i: number) => (
-                            <tr key={i} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc', transition: 'background-color 0.2s' }}>
-                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(g.reportDateTime)}</td>
-                              <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1e293b' }}>{g.area}</td>
-                              <td style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                {g.items.map((w: any, j: number) => {
-                                  const isWarning = w.warningName.includes('警報') && !w.warningName.includes('注意報');
-                                  const isSpecial = w.warningName.includes('特別警報');
-                                  return (
-                                    <span key={j} style={{
-                                      padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
-                                      backgroundColor: isSpecial ? '#7f1d1d' : (isWarning ? '#fef2f2' : '#f0fdf4'),
-                                      color: isSpecial ? '#fff' : (isWarning ? '#dc2626' : '#166534'),
-                                      border: `1px solid ${isSpecial ? '#7f1d1d' : (isWarning ? '#fca5a5' : '#bbf7d0')}`
-                                    }}>{w.warningName}</span>
-                                  );
-                                })}
-                              </td>
+                          {items.map((row: any, i: number) => (
+                            <tr key={row.area + '-' + i} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
+                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                              >
+                                <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
+                                <td style={{ padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle' }}>{row.area}</td>
+                                <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {row.items
+                                      .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
+                                      .map((w: any, idx: number) => {
+                                        const displayName = formatWarningName(w.warningName);
+                                        return (
+                                          <span key={idx} style={{
+                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                                            whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            ...getWarningColor(w.warningLevel)
+                                          }}>
+                                            {displayName}
+                                          </span>
+                                        );
+                                      })}
+                                  </div>
+                                </td>
                             </tr>
                           ))}
                         </>
                       );
                     } else {
                       // デフォルトビュー: 都道府県ごとに一次細分区域を表示
-                      // filteredWarnings には class1 のデータが入っている前提
-                      // groupedWarnings は area(一次細分区域) ごとにまとまっている
-                      
                       const prefGroups: Record<string, any[]> = {};
                       PREFECTURES.forEach(p => prefGroups[p] = []);
                       
-                      Object.values(groupedWarnings).forEach((g: any) => {
-                        const pref = g.prefecture;
+                      Object.values(groupedWarnings).forEach((row: any) => {
+                        const pref = row.prefecture || row.area;
                         if (prefGroups[pref]) {
-                          prefGroups[pref].push(g);
+                          prefGroups[pref].push(row);
                         } else {
-                          // 未知の都道府県があれば最後に押し込むための処理等（通常はない）
                           if (!prefGroups['その他']) prefGroups['その他'] = [];
-                          prefGroups['その他'].push(g);
+                          prefGroups['その他'].push(row);
                         }
                       });
                       
@@ -400,87 +384,59 @@ export default function App() {
                             return (
                               <React.Fragment key={pref}>
                                 {/* 都道府県見出し */}
-                                <tr style={{ backgroundColor: '#e2e8f0' }}>
-                                  <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>
+                                <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+                                  <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
                                     {pref}
                                   </td>
                                 </tr>
                                 {/* 一次細分区域のリスト */}
-                                {regions.map((g: any, i: number) => (
+                                {regions.map((row: any, i: number) => (
                                   <tr 
-                                    key={i} 
-                                    onClick={() => {
-                                      setSelectedParentArea(g.area);
-                                      setViewMode('municipality');
-                                    }}
-                                    style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                    key={row.area + '-' + i} 
+                                    className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
+                                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                                   >
-                                    <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(g.reportDateTime)}</td>
-                                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#2563eb' }}>
-                                      {g.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
+                                    <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
+                                    <td 
+                                      style={{
+                                        padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
+                                        cursor: 'pointer',
+                                        textDecoration: 'underline',
+                                        textDecorationColor: '#93c5fd',
+                                        textUnderlineOffset: '4px'
+                                      }}
+                                      onClick={() => {
+                                        setSelectedParentArea(row.area);
+                                        setViewMode('municipality');
+                                      }}
+                                    >
+                                      {row.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
                                     </td>
-                                    <td style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                      {g.items.map((w: any, j: number) => {
-                                        const isWarning = w.warningName.includes('警報') && !w.warningName.includes('注意報');
-                                        const isSpecial = w.warningName.includes('特別警報');
-                                        return (
-                                          <span key={j} style={{
-                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
-                                            backgroundColor: isSpecial ? '#7f1d1d' : (isWarning ? '#fef2f2' : '#f0fdf4'),
-                                            color: isSpecial ? '#fff' : (isWarning ? '#dc2626' : '#166534'),
-                                            border: `1px solid ${isSpecial ? '#7f1d1d' : (isWarning ? '#fca5a5' : '#bbf7d0')}`
-                                          }}>{w.warningName}</span>
-                                        );
-                                      })}
+                                    <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {row.items
+                                          .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
+                                          .map((w: any, idx: number) => {
+                                            const displayName = formatWarningName(w.warningName);
+                                            return (
+                                              <span key={idx} style={{
+                                                padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                                                whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                ...getWarningColor(w.warningLevel)
+                                              }}>
+                                                {displayName}
+                                              </span>
+                                            );
+                                          })}
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
                               </React.Fragment>
                             );
                           })}
-                          
-                          {prefGroups['その他'] && prefGroups['その他'].length > 0 && (
-                            <React.Fragment>
-                              <tr style={{ backgroundColor: '#e2e8f0' }}>
-                                <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>
-                                  その他
-                                </td>
-                              </tr>
-                              {prefGroups['その他'].map((g: any, i: number) => (
-                                <tr 
-                                  key={i} 
-                                  onClick={() => {
-                                    setSelectedParentArea(g.area);
-                                    setViewMode('municipality');
-                                  }}
-                                  style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#fff'}
-                                >
-                                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(g.reportDateTime)}</td>
-                                  <td style={{ padding: '12px 16px', fontWeight: 600, color: '#2563eb' }}>
-                                    {g.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
-                                  </td>
-                                  <td style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {g.items.map((w: any, j: number) => {
-                                      const isWarning = w.warningName.includes('警報') && !w.warningName.includes('注意報');
-                                      const isSpecial = w.warningName.includes('特別警報');
-                                      return (
-                                        <span key={j} style={{
-                                          padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
-                                          backgroundColor: isSpecial ? '#7f1d1d' : (isWarning ? '#fef2f2' : '#f0fdf4'),
-                                          color: isSpecial ? '#fff' : (isWarning ? '#dc2626' : '#166534'),
-                                          border: `1px solid ${isSpecial ? '#7f1d1d' : (isWarning ? '#fca5a5' : '#bbf7d0')}`
-                                        }}>{w.warningName}</span>
-                                      );
-                                    })}
-                                  </td>
-                                </tr>
-                              ))}
-                            </React.Fragment>
-                          )}
                         </>
                       );
                     }
@@ -632,13 +588,55 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     
     // ポリゴン生成ヘルパー
     // 扇形（コーン）の外枠を計算するヘルパー
-    const getOuterTangentPolygon = (_points: any) => { return []; };
+    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
+      if (!points || points.length <= 1) return [];
+      
+      const leftPoints: [number, number][] = [];
+      const rightPoints: [number, number][] = [];
+      
+      const getDistAndAngle = (p1: any, p2: any) => {
+        const dLat = (p2.lat - p1.lat) * 111;
+        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
+        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+        const angle = Math.atan2(dLat, dLon); 
+        return { dist, angle };
+      };
+
+      const toLatLng = (p: any, angle: number): [number, number] => {
+        return [
+          p.lat + (p.r * Math.sin(angle)) / 111,
+          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
+        ];
+      };
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        if (!p1 || !p2) continue;
+        const { dist, angle } = getDistAndAngle(p1, p2);
+        
+        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) continue;
+
+        const theta = Math.asin((p1.r - p2.r) / dist);
+        const a1 = angle + Math.PI / 2 + theta;
+        const a2 = angle - Math.PI / 2 - theta;
+
+        leftPoints.push(toLatLng(p1, a1));
+        if (i === points.length - 2) leftPoints.push(toLatLng(p2, a1));
+
+        rightPoints.push(toLatLng(p1, a2));
+        if (i === points.length - 2) rightPoints.push(toLatLng(p2, a2));
+      }
+      
+      rightPoints.reverse();
+      return [...leftPoints, ...rightPoints];
+    };
 
     // 白色の予報円（Cone of uncertainty）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.polygon(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
     // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
@@ -736,19 +734,22 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
     }
     
-    // 予報の赤点ポリゴン(stormPolygon)は非表示にするよう修正
+    const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
+    if (stormPolygon.length > 0) {
+      L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
+    }
 
 
 
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
     if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: 'transparent', weight: 2 }).addTo(map);
     }
 
     const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
     if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
     }
 
     // 予報進路（点線）と予報円
@@ -806,7 +807,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
 
     // 進路線
     if (trackPoints.length > 1) {
-      L.polyline(trackPoints, { color: '#ffffff', weight: 4, dashArray: '8,8', opacity: 1 }).addTo(map);
+      L.polyline(trackPoints, { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
     }
 
     // 全体が見えるようにフィット
@@ -901,47 +902,47 @@ function InfoCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-// // 警報名の表示フォーマット（全角数字→半角数字変換とスペース挿入）
-// function formatWarningName(name: string): string {
-//   const match = name.match(/^レベル([１-５1-5])(.+)$/);
-//   if (match) {
-//     const numMap: Record<string, string> = { '１':'1', '２':'2', '３':'3', '４':'4', '５':'5' };
-//     const halfNum = numMap[match[1]] || match[1];
-//     return `レベル${halfNum} ${match[2]}`;
-//   }
-//   return name;
-// }
-// 
-// // 警戒レベル表示の優先度（高い方が先に表示）
-// function getWarningPriority(level: string): number {
-//   switch (level) {
-//     case 'level_5': case 'special': return 0;
-//     case 'level_4': return 1;
-//     case 'level_3': case 'warning': return 2;
-//     case 'level_2': case 'advisory': return 3;
-//     default: return 4;
-//   }
-// }
-// 
-// // 警戒レベルに応じた色分け（2026年新基準対応）
-// function getWarningColor(level: string): React.CSSProperties {
-//   switch (level) {
-//     case 'level_5':
-//     case 'special':
-//       return { backgroundColor: '#1e003b', color: '#ffffff' }; // レベル5: 黒紫
-//     case 'level_4':
-//       return { backgroundColor: '#800080', color: '#ffffff' }; // レベル4: 紫
-//     case 'level_3':
-//     case 'warning':
-//       return { backgroundColor: '#ff2800', color: '#ffffff' }; // レベル3: 赤
-//     case 'level_2':
-//     case 'advisory':
-//       return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2: 黄
-//     default:
-//       return { backgroundColor: '#f3f4f6', color: '#333333' };
-//   }
-// }
-// 
+// 警報名の表示フォーマット（全角数字→半角数字変換とスペース挿入）
+function formatWarningName(name: string): string {
+  const match = name.match(/^レベル([１-５1-5])(.+)$/);
+  if (match) {
+    const numMap: Record<string, string> = { '１':'1', '２':'2', '３':'3', '４':'4', '５':'5' };
+    const halfNum = numMap[match[1]] || match[1];
+    return `レベル${halfNum} ${match[2]}`;
+  }
+  return name;
+}
+
+// 警戒レベル表示の優先度（高い方が先に表示）
+function getWarningPriority(level: string): number {
+  switch (level) {
+    case 'level_5': case 'special': return 0;
+    case 'level_4': return 1;
+    case 'level_3': case 'warning': return 2;
+    case 'level_2': case 'advisory': return 3;
+    default: return 4;
+  }
+}
+
+// 警戒レベルに応じた色分け（2026年新基準対応）
+function getWarningColor(level: string): React.CSSProperties {
+  switch (level) {
+    case 'level_5':
+    case 'special':
+      return { backgroundColor: '#1e003b', color: '#ffffff' }; // レベル5: 黒紫
+    case 'level_4':
+      return { backgroundColor: '#800080', color: '#ffffff' }; // レベル4: 紫
+    case 'level_3':
+    case 'warning':
+      return { backgroundColor: '#ff2800', color: '#ffffff' }; // レベル3: 赤
+    case 'level_2':
+    case 'advisory':
+      return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2: 黄
+    default:
+      return { backgroundColor: '#f3f4f6', color: '#333333' };
+  }
+}
+
 // 気象庁標準カラーに準拠した震度の色付け
 function getSeismicIntensityColor(intensity: string): React.CSSProperties {
   if (intensity == null) return { backgroundColor: '#e2e8f0', color: '#475569' };

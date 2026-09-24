@@ -143,13 +143,55 @@ export default function ObsApp() {
     L.marker([lat, lon], { icon: typhoonIcon }).addTo(map);
 
     // 扇形（コーン）の外枠を計算するヘルパー
-    const getOuterTangentPolygon = (_points: any) => { return []; };
+    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
+      if (!points || points.length <= 1) return [];
+      
+      const leftPoints: [number, number][] = [];
+      const rightPoints: [number, number][] = [];
+      
+      const getDistAndAngle = (p1: any, p2: any) => {
+        const dLat = (p2.lat - p1.lat) * 111;
+        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
+        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+        const angle = Math.atan2(dLat, dLon); 
+        return { dist, angle };
+      };
+
+      const toLatLng = (p: any, angle: number): [number, number] => {
+        return [
+          p.lat + (p.r * Math.sin(angle)) / 111,
+          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
+        ];
+      };
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        if (!p1 || !p2) continue;
+        const { dist, angle } = getDistAndAngle(p1, p2);
+        
+        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) continue;
+
+        const theta = Math.asin((p1.r - p2.r) / dist);
+        const a1 = angle + Math.PI / 2 + theta;
+        const a2 = angle - Math.PI / 2 - theta;
+
+        leftPoints.push(toLatLng(p1, a1));
+        if (i === points.length - 2) leftPoints.push(toLatLng(p2, a1));
+
+        rightPoints.push(toLatLng(p1, a2));
+        if (i === points.length - 2) rightPoints.push(toLatLng(p2, a2));
+      }
+      
+      rightPoints.reverse();
+      return [...leftPoints, ...rightPoints];
+    };
 
     // 白色の予報円（扇形外枠のみ）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.polygon(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
     // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
@@ -268,18 +310,21 @@ export default function ObsApp() {
       if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
     }
     
-    // 暴風警戒域の赤点線ポリゴン（stormPolygon）は非表示にするよう修正
+    const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
+    if (stormPolygon.length > 0) {
+      L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
+    }
 
     
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
     if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: 'transparent', weight: 2 }).addTo(map);
     }
 
     const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
     if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
     }
 
 
@@ -290,7 +335,7 @@ export default function ObsApp() {
 
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#555', fillColor: 'transparent', weight: 1.5, dashArray: '6,4'
+          radius: fc.circleRadiusKm * 1000, color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5'
         }).addTo(map);
       }
 
@@ -306,7 +351,7 @@ export default function ObsApp() {
       
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: '#fff', fillOpacity: 0.1, weight: 1.5, dashArray: '5,5',
+          radius: fc.circleRadiusKm * 1000, color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5',
         }).addTo(map);
       }
 
@@ -320,7 +365,7 @@ export default function ObsApp() {
       const labelLon = fc.lon + dLon;
 
       L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
-        color: '#666', weight: 1, dashArray: '2,2'
+        color: '#e2e8f0', weight: 2, dashArray: '4,4'
       }).addTo(map);
 
       const labelIcon = L.divIcon({
@@ -333,7 +378,7 @@ export default function ObsApp() {
 
     // 現在地の黒点/赤点（curIcon）は非表示にするよう修正
     // 軌跡
-    L.polyline(trackPoints, { color: '#ffffff', weight: 4, dashArray: '8,8', opacity: 1 }).addTo(map);
+    L.polyline(trackPoints, { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
 
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
