@@ -225,12 +225,12 @@ export default function ObsApp() {
         const weekDay = weekDays[d.getDay()];
         
         if (use24HourFormat) {
-          return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> ${hour}時`;
+          return `${day}日(${weekDay}) ${hour}時`;
         } else {
-          if (hour === 0) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前0時`;
-          if (hour < 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前${hour}時`;
-          if (hour === 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後0時`;
-          return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後${hour - 12}時`;
+          if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
+          if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
+          if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
+          return `${day}日(${weekDay}) 午後${hour - 12}時`;
         }
       } catch { return isoStr; }
     };
@@ -436,7 +436,7 @@ export default function ObsApp() {
         }}>
           <div style={{ fontSize: '28px', color: '#93c5fd', marginBottom: '8px', fontWeight: 700 }}>
             台風<span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900, fontSize: '40px', margin: '0 6px' }}>{typhoonNum}</span>号
-            <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px' }}><span style={{ fontFamily: "'Zen Kaku Gothic New', sans-serif", fontWeight: 900 }}>(</span>{activeTyphoon.nameEn}<span style={{ fontFamily: "'Zen Kaku Gothic New', sans-serif", fontWeight: 900 }}>)</span></span>
+            <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px' }}>({activeTyphoon.nameEn})</span>
           </div>
           <div style={{ fontSize: '56px', fontWeight: 700, letterSpacing: '2px', lineHeight: 1.1 }}>
             {activeTyphoon.name}

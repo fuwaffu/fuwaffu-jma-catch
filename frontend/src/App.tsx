@@ -566,12 +566,12 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       const weekDay = weekDays[d.getDay()];
       
       if (use24HourFormat) {
-        return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> ${hour}時`;
+        return `${day}日(${weekDay}) ${hour}時`;
       } else {
-        if (hour === 0) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前0時`;
-        if (hour < 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前${hour}時`;
-        if (hour === 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後0時`;
-        return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後${hour - 12}時`;
+        if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
+        if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
+        if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
+        return `${day}日(${weekDay}) 午後${hour - 12}時`;
       }
     } catch { return isoStr; }
   };
