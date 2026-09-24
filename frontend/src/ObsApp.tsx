@@ -53,14 +53,19 @@ export default function ObsApp() {
 
   useEffect(() => {
     const fetchData = async () => {
+      console.log("[ObsApp] Starting data fetch for typhoons...");
       try {
         const res = await fetch(`${API_BASE}/api/typhoons`);
+        console.log(`[ObsApp] Typhoons response status: ${res.status}`);
         if (res.ok) {
           const data = await res.json();
+          console.log(`[ObsApp] Loaded Typhoons: ${data?.length} items`, data);
           setTyphoons(data);
+        } else {
+          console.error("[ObsApp] Typhoons API not OK:", res.statusText);
         }
       } catch (e) {
-        console.error('Failed to fetch typhoons', e);
+        console.error('[ObsApp] Failed to fetch typhoons:', e);
       }
       setLoading(false);
     };

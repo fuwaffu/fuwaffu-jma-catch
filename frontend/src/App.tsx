@@ -21,11 +21,14 @@ export default function App() {
   const fetchData = async (bustCache = false) => {
     setLoading(true);
     setError('');
+    console.log(`[App] Starting data fetch. bustCache=${bustCache}`);
     try {
       if (bustCache) {
+        console.log("[App] Triggering /api/sync-initial...");
         await fetch(`${API_BASE}/api/sync-initial`);
       }
       const cacheBuster = bustCache ? `?_t=${Date.now()}` : '';
+      console.log(`[App] Fetching API endpoints with cacheBuster: "${cacheBuster}"`);
       const [warningsRes, earthquakesRes, typhoonsRes, statusRes] = await Promise.all([
         fetch(`${API_BASE}/api/warnings${cacheBuster}`),
         fetch(`${API_BASE}/api/earthquakes${cacheBuster}`),
@@ -33,25 +36,37 @@ export default function App() {
         fetch(`${API_BASE}/api/status${cacheBuster}`)
       ]);
 
+      console.log(`[App] Responses status - Warnings: ${warningsRes.status}, Earthquakes: ${earthquakesRes.status}, Typhoons: ${typhoonsRes.status}, Status: ${statusRes.status}`);
+
       if (!warningsRes.ok || !earthquakesRes.ok || !typhoonsRes.ok) {
         if (warningsRes.status === 500 || earthquakesRes.status === 500) {
+          console.error("[App] KV Limit Exceeded detected (500 status)");
           throw new Error('LIMIT_EXCEEDED');
         }
-        throw new Error('Failed to fetch one or more APIs');
+        throw new Error(`Failed to fetch APIs. W:${warningsRes.status}, E:${earthquakesRes.status}, T:${typhoonsRes.status}`);
       }
 
-      setWarnings(await warningsRes.json());
-      setEarthquakes(await earthquakesRes.json());
-      setTyphoons(await typhoonsRes.json());
+      const warningsData = await warningsRes.json();
+      const earthquakesData = await earthquakesRes.json();
+      const typhoonsData = await typhoonsRes.json();
+
+      console.log(`[App] Loaded Warnings: ${warningsData?.length} items`, warningsData);
+      console.log(`[App] Loaded Earthquakes: ${earthquakesData?.length} items`, earthquakesData);
+      console.log(`[App] Loaded Typhoons: ${typhoonsData?.length} items`, typhoonsData);
+
+      setWarnings(warningsData);
+      setEarthquakes(earthquakesData);
+      setTyphoons(typhoonsData);
 
       if (statusRes.ok) {
         const statusData = await statusRes.json();
+        console.log("[App] Loaded Status:", statusData);
         setLastUpdated(statusData.lastUpdated || null);
-        if (statusData.lastUpdated) {
-          console.log("【システム更新検証】最新の更新時刻:", statusData.lastUpdated);
-        }
+      } else {
+        console.warn("[App] Status API failed:", statusRes.status);
       }
     } catch (e: any) {
+      console.error("[App] Catch Error in fetchData:", e);
       setError(e.message === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : e.message);
     }
     setLoading(false);
