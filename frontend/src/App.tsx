@@ -281,7 +281,7 @@ export default function App() {
                       onClick={handleBack}
                       style={{ padding: '4px 12px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
                     >
-                      ← 都道府県に戻る
+                      ← {viewMode === 'municipality' ? '地方・区域に戻る' : '都道府県に戻る'}
                     </button>
                     <span style={{ fontSize: '0.875rem', color: '#475569', backgroundColor: '#e0e7ff', padding: '4px 10px', borderRadius: '4px', fontWeight: 600 }}>
                       {selectedParentArea} の市町村
@@ -371,115 +371,97 @@ export default function App() {
 
                     const warningsByCategory: Record<string, any[]> = {};
                     groupedWarnings.forEach((row: any) => {
-                      const cat = getCategory(row.prefecture || row.area);
+                      let cat = 'その他';
+                      if (viewMode === 'prefecture') {
+                        cat = getCategory(row.prefecture || row.area);
+                      } else if (viewMode === 'region') {
+                        cat = row.prefecture || '不明';
+                      } else if (viewMode === 'municipality') {
+                        cat = row.items[0]?.parentRegion || row.area;
+                      }
                       if (!warningsByCategory[cat]) warningsByCategory[cat] = [];
                       warningsByCategory[cat].push(row);
                     });
 
-                    return CATEGORY_ORDER.map(cat => {
-                      if (!warningsByCategory[cat] || warningsByCategory[cat].length === 0) return null;
+                    let sortedCats = Object.keys(warningsByCategory);
+                    if (viewMode === 'prefecture') {
+                      sortedCats = CATEGORY_ORDER.filter(c => warningsByCategory[c]);
+                    } else if (viewMode === 'region') {
+                      // Already grouped by prefecture name
+                    }
+
+                    return sortedCats.map(cat => {
+                      const rows = warningsByCategory[cat];
+                      if (!rows || rows.length === 0) return null;
+
+                      if (viewMode === 'prefecture') {
+                        rows.sort((a: any, b: any) => {
+                          const idxA = PREF_CATEGORY_MAP[cat]?.indexOf(a.area) ?? 999;
+                          const idxB = PREF_CATEGORY_MAP[cat]?.indexOf(b.area) ?? 999;
+                          return (idxA !== -1 ? idxA : 999) - (idxB !== -1 ? idxB : 999);
+                        });
+                      }
+
                       return (
                         <React.Fragment key={cat}>
                           <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
-                            <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>{cat}</td>
+                            <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
+                              {viewMode === 'municipality' ? `└ ${cat}` : cat}
+                            </td>
                           </tr>
-                            {Object.entries(
-                              warningsByCategory[cat].reduce((acc: any, row: any) => {
-                                const p = row.prefecture || row.area;
-                                if (!acc[p]) acc[p] = [];
-                                acc[p].push(row);
-                                return acc;
-                              }, {})
-                            )
-                            .sort(([prefA], [prefB]) => {
-                              const idxA = PREF_CATEGORY_MAP[cat]?.indexOf(prefA as string) ?? 999;
-                              const idxB = PREF_CATEGORY_MAP[cat]?.indexOf(prefB as string) ?? 999;
-                              return (idxA !== -1 ? idxA : 999) - (idxB !== -1 ? idxB : 999);
-                            })
-                            .map(([pref, rows]: [string, any]) => {
-                              const renderRow = (row: any, index: number) => (
-                                <tr key={row.area || index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                                >
-                              <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
-                              <td 
-                                style={{
-                                  padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
-                                  cursor: (viewMode === 'prefecture' || viewMode === 'region') ? 'pointer' : 'default',
-                                  textDecoration: (viewMode === 'prefecture' || viewMode === 'region') ? 'underline' : 'none',
-                                  textDecorationColor: '#93c5fd',
-                                  textUnderlineOffset: '4px',
-                                  paddingLeft: viewMode === 'municipality' ? '32px' : '16px'
-                                }}
-                                onClick={() => {
-                                  if (viewMode === 'prefecture' || viewMode === 'region') {
-                                    setSelectedParentArea(viewMode === 'prefecture' ? (row.prefecture || row.area) : row.area);
-                                    setViewMode('municipality');
-                                  }
-                                }}
+                          
+                          {rows.map((row: any, index: number) => (
+                            <tr key={row.area + '-' + index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
+                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                               >
-                                {viewMode === 'municipality' ? row.area : (viewMode !== 'prefecture' && row.prefecture ? `${row.prefecture} ${row.area}` : row.area)}
-                              </td>
-                              <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                  {row.items
-                                    .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
-                                    .map((w: any, idx: number) => {
-                                      const displayName = formatWarningName(w.warningName);
-                                      return (
-                                        <span key={idx} style={{
-                                          padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                                          whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                          ...getWarningColor(w.warningLevel)
-                                        }}>
-                                          {displayName}
-                                        </span>
-                                      );
-                                    })}
-                                </div>
-                              </td>
-                            </tr>
-                              );
-
-                              return (
-                            <React.Fragment key={pref}>
-                              {pref !== cat && (
-                                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                  <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem' }}>
-                                    {pref}
-                                  </td>
-                                </tr>
-                              )}
-                              {viewMode === 'municipality' ? (
-                                Object.entries(
-                                  rows.reduce((acc: any, row: any) => {
-                                    const r = row.items[0]?.parentRegion || row.area;
-                                    if (!acc[r]) acc[r] = [];
-                                    acc[r].push(row);
-                                    return acc;
-                                  }, {})
-                                ).map(([regName, regRows]: [string, any]) => (
-                                  <React.Fragment key={regName}>
-                                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                      <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem', paddingLeft: '24px' }}>
-                                        └ {regName}
-                                      </td>
-                                    </tr>
-                                    {regRows.map((row: any, index: number) => renderRow(row, index))}
-                                  </React.Fragment>
-                                ))
-                              ) : (
-                                rows.map((row: any, index: number) => renderRow(row, index))
-                              )}
-                              </React.Fragment>
-                              );
-                            })}
-                          </React.Fragment>
-                        );
-                      });
-                    })()}
+                            <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
+                            <td 
+                              style={{
+                                padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
+                                cursor: (viewMode === 'prefecture' || viewMode === 'region') ? 'pointer' : 'default',
+                                textDecoration: (viewMode === 'prefecture' || viewMode === 'region') ? 'underline' : 'none',
+                                textDecorationColor: '#93c5fd',
+                                textUnderlineOffset: '4px',
+                                paddingLeft: viewMode === 'region' ? '32px' : (viewMode === 'municipality' ? '48px' : '16px')
+                              }}
+                              onClick={() => {
+                                if (viewMode === 'prefecture') {
+                                  setSelectedParentArea(row.area);
+                                  setViewMode('region');
+                                } else if (viewMode === 'region') {
+                                  setSelectedParentArea(row.area);
+                                  setViewMode('municipality');
+                                }
+                              }}
+                            >
+                              {viewMode === 'prefecture' ? row.area : `└ ${row.area}`}
+                            </td>
+                            <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {row.items
+                                  .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
+                                  .map((w: any, idx: number) => {
+                                    const displayName = formatWarningName(w.warningName);
+                                    return (
+                                      <span key={idx} style={{
+                                        padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                                        whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        ...getWarningColor(w.warningLevel)
+                                      }}>
+                                        {displayName}
+                                      </span>
+                                    );
+                                  })}
+                              </div>
+                            </td>
+                          </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
                   {activeTab === 'earthquakes' && [...earthquakes]
                     .sort((a, b) => new Date(b.originTime).getTime() - new Date(a.originTime).getTime())
                     .map((eq, index) => {
