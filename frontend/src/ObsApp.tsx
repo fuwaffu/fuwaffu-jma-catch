@@ -84,9 +84,14 @@ export default function ObsApp() {
 
   const [use24HourFormat, setUse24HourFormat] = useState(true);
 
-  // 一番最新の台風（またはTC番号が一番大きいもの）を選択
+  const urlParams = new URLSearchParams(window.location.search);
+  const typhoonIdParam = urlParams.get('id');
+
+  // URLのIDに一致する台風を優先、なければ一番最新の台風（TC番号が一番大きいもの）を選択
   const activeTyphoon = typhoons.length > 0 
-    ? [...typhoons].sort((a, b) => b.tcNumber - a.tcNumber)[0] 
+    ? (typhoonIdParam 
+        ? typhoons.find(t => String(t.tcNumber) === typhoonIdParam) || [...typhoons].sort((a, b) => b.tcNumber - a.tcNumber)[0]
+        : [...typhoons].sort((a, b) => b.tcNumber - a.tcNumber)[0])
     : null;
 
   useEffect(() => {

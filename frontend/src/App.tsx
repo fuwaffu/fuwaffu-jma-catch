@@ -856,7 +856,21 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <button onClick={onBack} style={{ padding: '6px 14px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>← 一覧に戻る</button>
         <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>🌀 {displayName}</h2>
-        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>更新: {new Date(typhoon.updatedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span>
+        <span style={{ fontSize: '0.8rem', color: '#64748b', flex: 1 }}>更新: {new Date(typhoon.updatedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span>
+        <button
+          onClick={() => {
+            const url = `${window.location.origin}/?mode=obs&id=${typhoon.tcNumber}`;
+            navigator.clipboard.writeText(url).then(() => {
+              alert('OBS用のURLをクリップボードにコピーしました！\nブラウザソースのURLに指定してください。');
+            }).catch(e => {
+              console.error(e);
+              alert('コピーに失敗しました。');
+            });
+          }}
+          style={{ padding: '6px 14px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          <i className="fa-solid fa-link"></i> OBS表示用リンクをコピー
+        </button>
       </div>
 
       {/* 地図 */}
