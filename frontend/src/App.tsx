@@ -475,8 +475,7 @@ export default function App() {
                               )}
                               </React.Fragment>
                               );
-                            })
-                            ))}
+                            })}
                           </React.Fragment>
                         );
                       });
