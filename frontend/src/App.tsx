@@ -406,7 +406,7 @@ export default function App() {
                         <React.Fragment key={cat}>
                           <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
                             <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
-                              {viewMode === 'municipality' ? `└ ${cat}` : cat}
+                              {cat}
                             </td>
                           </tr>
                           
@@ -423,7 +423,7 @@ export default function App() {
                                 textDecoration: (viewMode === 'prefecture' || viewMode === 'region') ? 'underline' : 'none',
                                 textDecorationColor: '#93c5fd',
                                 textUnderlineOffset: '4px',
-                                paddingLeft: viewMode === 'region' ? '32px' : (viewMode === 'municipality' ? '48px' : '16px')
+                                paddingLeft: '16px'
                               }}
                               onClick={() => {
                                 if (viewMode === 'prefecture') {
@@ -435,7 +435,7 @@ export default function App() {
                                 }
                               }}
                             >
-                              {viewMode === 'prefecture' ? row.area : `└ ${row.area}`}
+                              {row.area}
                             </td>
                             <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
