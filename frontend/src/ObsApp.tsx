@@ -294,13 +294,14 @@ export default function ObsApp() {
         }).addTo(map);
       }
 
-      // 予報円の中心に黒点を表示
+      // 予報円の中心に白点を表示 (進路線より上にするため pane を指定)
       L.circleMarker([fc.lat, fc.lon], {
-        radius: 3,
-        color: '#000',
-        fillColor: '#000',
+        radius: 4,
+        color: '#fff',
+        fillColor: '#fff',
         fillOpacity: 1,
-        weight: 1
+        weight: 1,
+        pane: 'markerPane'
       }).addTo(map);
       
       if (fc.circleRadiusKm > 0) {
@@ -311,7 +312,7 @@ export default function ObsApp() {
 
       const timeLabel = formatForecastTime(fc.dateTime);
       const angle = (idx % 2 === 0) ? -45 : 135; 
-      const labelOffsetKm = (fc.circleRadiusKm || 50) + 90; 
+      const labelOffsetKm = (fc.circleRadiusKm || 50) + 160; 
       const rad = angle * Math.PI / 180;
       const dLat = (labelOffsetKm / 111) * Math.cos(rad);
       const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);

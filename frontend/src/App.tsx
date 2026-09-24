@@ -145,6 +145,14 @@ export default function App() {
   });
 
   // 最新の発表日時のデータのみを地域ごとにグループ化
+  
+  const formatDate = (isoStr: string) => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    return `${d.getDate()}日 ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+  };
+
   const groupedWarnings = Object.values(filteredWarnings.reduce((acc: any, w: any) => {
     const areaName = w.region || w.area;
     if (!acc[areaName] || new Date(w.reportDateTime) > new Date(acc[areaName].reportDateTime)) {
@@ -289,19 +297,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>表示単位:</span>
-                    <select 
-                      value={viewMode} 
-                      onChange={(e) => {
-                        setViewMode(e.target.value as any);
-                        setSelectedParentArea(null);
-                      }}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem', backgroundColor: '#fff', color: '#475569' }}
-                    >
-                      <option value="prefecture">都道府県（地方・予報区など）</option>
-                      <option value="region">地域 (一次細分区域)</option>
-                      <option value="municipality">市町村</option>
-                    </select>
+                    <span style={{ fontSize: "0.875rem", color: "#475569", fontWeight: 600 }}>全国の気象警報・注意報</span>
                   </>
                 )}
               </div>
@@ -338,129 +334,156 @@ export default function App() {
                 </thead>
                 <tbody>
                   {activeTab === 'warnings' && (() => {
-                    const PREF_CATEGORY_MAP: Record<string, string[]> = {
-                      "北海道": [
-                        "北海道", "宗谷地方", "上川地方", "留萌地方", "網走地方", "北見地方", "紋別地方", 
-                        "十勝地方", "釧路地方", "根室地方", "胆振地方", "日高地方", "石狩地方", "空知地方", 
-                        "後志地方", "渡島地方", "檜山地方",
-                        "上川・留萌地方", "網走・北見・紋別地方", "石狩・空知・後志地方", 
-                        "釧路・根室地方", "胆振・日高地方", "渡島・檜山地方"
-                      ],
-                      "東北": ["青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県"],
-                      "関東甲信": ["茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県", "山梨県", "長野県"],
-                      "北陸": ["新潟県", "富山県", "石川県", "福井県"],
-                      "東海": ["岐阜県", "静岡県", "愛知県", "三重県"],
-                      "近畿": ["滋賀県", "京都府", "大阪府", "兵庫県", "奈良県", "和歌山県"],
-                      "中国 (山口は除く)": ["鳥取県", "島根県", "岡山県", "広島県"],
-                      "四国": ["徳島県", "香川県", "愛媛県", "高知県"],
-                      "九州北部 (山口を含む)": ["山口県", "福岡県", "佐賀県", "長崎県", "熊本県", "大分県"],
-                      "九州南部・奄美": ["宮崎県", "鹿児島県", "鹿児島県（奄美地方除く）", "奄美地方"],
-                      "沖縄": ["沖縄県", "沖縄本島地方", "大東島地方", "宮古島地方", "八重山地方"]
-                    };
-                    const CATEGORY_ORDER = [
-                      "北海道", "東北", "関東甲信", "北陸", "東海", "近畿",
-                      "中国 (山口は除く)", "四国", "九州北部 (山口を含む)", "九州南部・奄美", "沖縄", "その他"
-                    ];
+                    const PREFECTURES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
                     
-                    const getCategory = (pref: string) => {
-                      for (const [cat, prefs] of Object.entries(PREF_CATEGORY_MAP)) {
-                        if (prefs.includes(pref)) return cat;
-                      }
-                      return "その他";
-                    };
-
-                    const warningsByCategory: Record<string, any[]> = {};
-                    groupedWarnings.forEach((row: any) => {
-                      let cat = 'その他';
-                      if (viewMode === 'prefecture') {
-                        cat = getCategory(row.prefecture || row.area);
-                      } else if (viewMode === 'region') {
-                        cat = row.prefecture || '不明';
-                      } else if (viewMode === 'municipality') {
-                        cat = row.items[0]?.parentRegion || row.area;
-                      }
-                      if (!warningsByCategory[cat]) warningsByCategory[cat] = [];
-                      warningsByCategory[cat].push(row);
-                    });
-
-                    let sortedCats = Object.keys(warningsByCategory);
-                    if (viewMode === 'prefecture') {
-                      sortedCats = CATEGORY_ORDER.filter(c => warningsByCategory[c]);
-                    } else if (viewMode === 'region') {
-                      // Already grouped by prefecture name
-                    }
-
-                    return sortedCats.map(cat => {
-                      const rows = warningsByCategory[cat];
-                      if (!rows || rows.length === 0) return null;
-
-                      if (viewMode === 'prefecture') {
-                        rows.sort((a: any, b: any) => {
-                          const idxA = PREF_CATEGORY_MAP[cat]?.indexOf(a.area) ?? 999;
-                          const idxB = PREF_CATEGORY_MAP[cat]?.indexOf(b.area) ?? 999;
-                          return (idxA !== -1 ? idxA : 999) - (idxB !== -1 ? idxB : 999);
-                        });
-                      }
-
+                    if (viewMode === 'municipality') {
+                      // 市町村ビュー: 選択された親地域(一次細分区域)に属する市町村を表示
+                      const items = Object.values(groupedWarnings).sort((a: any, b: any) => {
+                        return new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime();
+                      });
+                      
                       return (
-                        <React.Fragment key={cat}>
-                          <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
-                            <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
-                              {cat}
-                            </td>
-                          </tr>
-                          
-                          {rows.map((row: any, index: number) => (
-                            <tr key={row.area + '-' + index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                              >
-                            <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
-                            <td 
-                              style={{
-                                padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
-                                cursor: (viewMode === 'prefecture' || viewMode === 'region') ? 'pointer' : 'default',
-                                textDecoration: (viewMode === 'prefecture' || viewMode === 'region') ? 'underline' : 'none',
-                                textDecorationColor: '#93c5fd',
-                                textUnderlineOffset: '4px',
-                                paddingLeft: '16px'
-                              }}
-                              onClick={() => {
-                                if (viewMode === 'prefecture') {
-                                  setSelectedParentArea(row.area);
-                                  setViewMode('region');
-                                } else if (viewMode === 'region') {
-                                  setSelectedParentArea(row.area);
-                                  setViewMode('municipality');
-                                }
-                              }}
-                            >
-                              {row.area}
-                            </td>
-                            <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                {row.items
-                                  .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
-                                  .map((w: any, idx: number) => {
-                                    const displayName = formatWarningName(w.warningName);
-                                    return (
-                                      <span key={idx} style={{
-                                        padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                                        whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                        ...getWarningColor(w.warningLevel)
-                                      }}>
-                                        {displayName}
-                                      </span>
-                                    );
-                                  })}
-                              </div>
-                            </td>
-                          </tr>
+                        <>
+                          {items.length === 0 && (
+                            <tr><td colSpan={3} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>現在発表されている警報・注意報はありません</td></tr>
+                          )}
+                          {items.map((g: any, i: number) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc', transition: 'background-color 0.2s' }}>
+                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(g.reportDateTime)}</td>
+                              <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1e293b' }}>{g.area}</td>
+                              <td style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {g.items.map((w: any, j: number) => {
+                                  const isWarning = w.warningName.includes('警報') && !w.warningName.includes('注意報');
+                                  const isSpecial = w.warningName.includes('特別警報');
+                                  return (
+                                    <span key={j} style={{
+                                      padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                                      backgroundColor: isSpecial ? '#7f1d1d' : (isWarning ? '#fef2f2' : '#f0fdf4'),
+                                      color: isSpecial ? '#fff' : (isWarning ? '#dc2626' : '#166534'),
+                                      border: `1px solid ${isSpecial ? '#7f1d1d' : (isWarning ? '#fca5a5' : '#bbf7d0')}`
+                                    }}>{w.warningName}</span>
+                                  );
+                                })}
+                              </td>
+                            </tr>
                           ))}
-                        </React.Fragment>
+                        </>
                       );
-                    });
+                    } else {
+                      // デフォルトビュー: 都道府県ごとに一次細分区域を表示
+                      // filteredWarnings には class1 のデータが入っている前提
+                      // groupedWarnings は area(一次細分区域) ごとにまとまっている
+                      
+                      const prefGroups: Record<string, any[]> = {};
+                      PREFECTURES.forEach(p => prefGroups[p] = []);
+                      
+                      Object.values(groupedWarnings).forEach((g: any) => {
+                        const pref = g.prefecture;
+                        if (prefGroups[pref]) {
+                          prefGroups[pref].push(g);
+                        } else {
+                          // 未知の都道府県があれば最後に押し込むための処理等（通常はない）
+                          if (!prefGroups['その他']) prefGroups['その他'] = [];
+                          prefGroups['その他'].push(g);
+                        }
+                      });
+                      
+                      return (
+                        <>
+                          {PREFECTURES.map(pref => {
+                            const regions = prefGroups[pref] || [];
+                            if (regions.length === 0) return null; // 警報がない都道府県は非表示
+                            
+                            // Sort regions by reportDateTime
+                            regions.sort((a: any, b: any) => new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime());
+
+                            return (
+                              <React.Fragment key={pref}>
+                                {/* 都道府県見出し */}
+                                <tr style={{ backgroundColor: '#e2e8f0' }}>
+                                  <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>
+                                    {pref}
+                                  </td>
+                                </tr>
+                                {/* 一次細分区域のリスト */}
+                                {regions.map((g: any, i: number) => (
+                                  <tr 
+                                    key={i} 
+                                    onClick={() => {
+                                      setSelectedParentArea(g.area);
+                                      setViewMode('municipality');
+                                    }}
+                                    style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                  >
+                                    <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(g.reportDateTime)}</td>
+                                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#2563eb' }}>
+                                      {g.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
+                                    </td>
+                                    <td style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                      {g.items.map((w: any, j: number) => {
+                                        const isWarning = w.warningName.includes('警報') && !w.warningName.includes('注意報');
+                                        const isSpecial = w.warningName.includes('特別警報');
+                                        return (
+                                          <span key={j} style={{
+                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                                            backgroundColor: isSpecial ? '#7f1d1d' : (isWarning ? '#fef2f2' : '#f0fdf4'),
+                                            color: isSpecial ? '#fff' : (isWarning ? '#dc2626' : '#166534'),
+                                            border: `1px solid ${isSpecial ? '#7f1d1d' : (isWarning ? '#fca5a5' : '#bbf7d0')}`
+                                          }}>{w.warningName}</span>
+                                        );
+                                      })}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            );
+                          })}
+                          
+                          {prefGroups['その他'] && prefGroups['その他'].length > 0 && (
+                            <React.Fragment>
+                              <tr style={{ backgroundColor: '#e2e8f0' }}>
+                                <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>
+                                  その他
+                                </td>
+                              </tr>
+                              {prefGroups['その他'].map((g: any, i: number) => (
+                                <tr 
+                                  key={i} 
+                                  onClick={() => {
+                                    setSelectedParentArea(g.area);
+                                    setViewMode('municipality');
+                                  }}
+                                  style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                >
+                                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDate(g.reportDateTime)}</td>
+                                  <td style={{ padding: '12px 16px', fontWeight: 600, color: '#2563eb' }}>
+                                    {g.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
+                                  </td>
+                                  <td style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {g.items.map((w: any, j: number) => {
+                                      const isWarning = w.warningName.includes('警報') && !w.warningName.includes('注意報');
+                                      const isSpecial = w.warningName.includes('特別警報');
+                                      return (
+                                        <span key={j} style={{
+                                          padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                                          backgroundColor: isSpecial ? '#7f1d1d' : (isWarning ? '#fef2f2' : '#f0fdf4'),
+                                          color: isSpecial ? '#fff' : (isWarning ? '#dc2626' : '#166534'),
+                                          border: `1px solid ${isSpecial ? '#7f1d1d' : (isWarning ? '#fca5a5' : '#bbf7d0')}`
+                                        }}>{w.warningName}</span>
+                                      );
+                                    })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          )}
+                        </>
+                      );
+                    }
                   })()}
                   {activeTab === 'earthquakes' && [...earthquakes]
                     .sort((a, b) => new Date(b.originTime).getTime() - new Date(a.originTime).getTime())
@@ -878,47 +901,47 @@ function InfoCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-// 警報名の表示フォーマット（全角数字→半角数字変換とスペース挿入）
-function formatWarningName(name: string): string {
-  const match = name.match(/^レベル([１-５1-5])(.+)$/);
-  if (match) {
-    const numMap: Record<string, string> = { '１':'1', '２':'2', '３':'3', '４':'4', '５':'5' };
-    const halfNum = numMap[match[1]] || match[1];
-    return `レベル${halfNum} ${match[2]}`;
-  }
-  return name;
-}
-
-// 警戒レベル表示の優先度（高い方が先に表示）
-function getWarningPriority(level: string): number {
-  switch (level) {
-    case 'level_5': case 'special': return 0;
-    case 'level_4': return 1;
-    case 'level_3': case 'warning': return 2;
-    case 'level_2': case 'advisory': return 3;
-    default: return 4;
-  }
-}
-
-// 警戒レベルに応じた色分け（2026年新基準対応）
-function getWarningColor(level: string): React.CSSProperties {
-  switch (level) {
-    case 'level_5':
-    case 'special':
-      return { backgroundColor: '#1e003b', color: '#ffffff' }; // レベル5: 黒紫
-    case 'level_4':
-      return { backgroundColor: '#800080', color: '#ffffff' }; // レベル4: 紫
-    case 'level_3':
-    case 'warning':
-      return { backgroundColor: '#ff2800', color: '#ffffff' }; // レベル3: 赤
-    case 'level_2':
-    case 'advisory':
-      return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2: 黄
-    default:
-      return { backgroundColor: '#f3f4f6', color: '#333333' };
-  }
-}
-
+// // 警報名の表示フォーマット（全角数字→半角数字変換とスペース挿入）
+// function formatWarningName(name: string): string {
+//   const match = name.match(/^レベル([１-５1-5])(.+)$/);
+//   if (match) {
+//     const numMap: Record<string, string> = { '１':'1', '２':'2', '３':'3', '４':'4', '５':'5' };
+//     const halfNum = numMap[match[1]] || match[1];
+//     return `レベル${halfNum} ${match[2]}`;
+//   }
+//   return name;
+// }
+// 
+// // 警戒レベル表示の優先度（高い方が先に表示）
+// function getWarningPriority(level: string): number {
+//   switch (level) {
+//     case 'level_5': case 'special': return 0;
+//     case 'level_4': return 1;
+//     case 'level_3': case 'warning': return 2;
+//     case 'level_2': case 'advisory': return 3;
+//     default: return 4;
+//   }
+// }
+// 
+// // 警戒レベルに応じた色分け（2026年新基準対応）
+// function getWarningColor(level: string): React.CSSProperties {
+//   switch (level) {
+//     case 'level_5':
+//     case 'special':
+//       return { backgroundColor: '#1e003b', color: '#ffffff' }; // レベル5: 黒紫
+//     case 'level_4':
+//       return { backgroundColor: '#800080', color: '#ffffff' }; // レベル4: 紫
+//     case 'level_3':
+//     case 'warning':
+//       return { backgroundColor: '#ff2800', color: '#ffffff' }; // レベル3: 赤
+//     case 'level_2':
+//     case 'advisory':
+//       return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2: 黄
+//     default:
+//       return { backgroundColor: '#f3f4f6', color: '#333333' };
+//   }
+// }
+// 
 // 気象庁標準カラーに準拠した震度の色付け
 function getSeismicIntensityColor(intensity: string): React.CSSProperties {
   if (intensity == null) return { backgroundColor: '#e2e8f0', color: '#475569' };
