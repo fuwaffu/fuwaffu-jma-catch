@@ -155,10 +155,22 @@ export default {
                   };
                   
                   const getPrefecture = (code: string) => {
-                      if (areaData.class20s && areaData.class20s[code]) return normalizePrefectureName(areaData.class20s[code].parent);
-                      if (areaData.class15s && areaData.class15s[code]) return normalizePrefectureName(areaData.class15s[code].parent);
-                      if (areaData.class10s && areaData.class10s[code]) return normalizePrefectureName(areaData.class10s[code].parent);
-                      return '';
+                      let officeCode = '';
+                      if (areaData.class20s && areaData.class20s[code]) {
+                          const c15 = areaData.class20s[code].parent;
+                          const c10 = areaData.class15s && areaData.class15s[c15] ? areaData.class15s[c15].parent : '';
+                          officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
+                      } else if (areaData.class15s && areaData.class15s[code]) {
+                          const c10 = areaData.class15s[code].parent;
+                          officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
+                      } else if (areaData.class10s && areaData.class10s[code]) {
+                          officeCode = areaData.class10s[code].parent;
+                      } else if (areaData.offices && areaData.offices[code]) {
+                          officeCode = code;
+                      }
+                      
+                      const prefName = (areaData.offices && areaData.offices[officeCode]) ? areaData.offices[officeCode].name : (OFFICE_CODE_TO_PREF[officeCode] || '');
+                      return normalizePrefectureName(prefName);
                   }
                   
                   let warningsData: any[] = [];
@@ -203,15 +215,27 @@ export default {
           // Fallback to KV if fetch fails (but KV is stale)
           return await cachedKvQuery('warnings', env, corsHeaders);
       }
-      if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
+      if (url.pathname === "/api/earthquakes") {
+          try {
+              const eqRes = await fetch("https://www.jma.go.jp/bosai/quake/data/list.json");
+              if (eqRes.ok) {
+                  const eqList = await eqRes.json() as any[];
+                  const earthquakesData = eqList.slice(0, 200).map((eq: any) => ({
+                      xmlId: eq.json || `initial-${eq.eid}`,
+                      originTime: eq.at,
+                      hypocenterName: eq.anm || '',
+                      magnitude: eq.mag || '',
+                      maxIntensity: eq.maxi || '',
+                      depth: 0
+                  }));
+                  return new Response(JSON.stringify(earthquakesData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+              }
+          } catch(e) {}
+          return await cachedKvQuery('earthquakes', env, corsHeaders);
+      }
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
       if (url.pathname === "/api/status") {
-        let status: any = { lastUpdated: null };
-        try {
-          const raw = await env.WEATHER_DATA_STORE.get('status');
-          if (raw) status = { ...status, ...JSON.parse(raw) };
-        } catch(e) {}
-        return new Response(JSON.stringify(status), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ lastUpdated: new Date().toISOString() }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/debug-clear") {
