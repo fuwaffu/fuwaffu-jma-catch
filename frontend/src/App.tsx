@@ -396,16 +396,8 @@ export default function App() {
                               const idxB = PREF_CATEGORY_MAP[cat]?.indexOf(prefB as string) ?? 999;
                               return (idxA !== -1 ? idxA : 999) - (idxB !== -1 ? idxB : 999);
                             })
-                            .map(([pref, rows]: [string, any]) => (
-                            <React.Fragment key={pref}>
-                              {(viewMode === 'prefecture' || viewMode === 'region') && pref !== cat && (
-                                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                  <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem' }}>
-                                    {pref}
-                                  </td>
-                                </tr>
-                              )}
-                              {rows.map((row: any, index: number) => (
+                            .map(([pref, rows]: [string, any]) => {
+                              const renderRow = (row: any, index: number) => (
                                 <tr key={row.area || index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
                                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
@@ -418,6 +410,7 @@ export default function App() {
                                   textDecoration: (viewMode === 'prefecture' || viewMode === 'region') ? 'underline' : 'none',
                                   textDecorationColor: '#93c5fd',
                                   textUnderlineOffset: '4px',
+                                  paddingLeft: viewMode === 'municipality' ? '32px' : '16px'
                                 }}
                                 onClick={() => {
                                   if (viewMode === 'prefecture' || viewMode === 'region') {
@@ -426,7 +419,7 @@ export default function App() {
                                   }
                                 }}
                               >
-                                {viewMode !== 'prefecture' && row.prefecture ? `${row.prefecture} ${row.area}` : row.area}
+                                {viewMode === 'municipality' ? row.area : (viewMode !== 'prefecture' && row.prefecture ? `${row.prefecture} ${row.area}` : row.area)}
                               </td>
                               <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -448,8 +441,41 @@ export default function App() {
                                 </div>
                               </td>
                             </tr>
-                                ))}
+                              );
+
+                              return (
+                            <React.Fragment key={pref}>
+                              {pref !== cat && (
+                                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                  <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem' }}>
+                                    {pref}
+                                  </td>
+                                </tr>
+                              )}
+                              {viewMode === 'municipality' ? (
+                                Object.entries(
+                                  rows.reduce((acc: any, row: any) => {
+                                    const r = row.items[0]?.parentRegion || row.area;
+                                    if (!acc[r]) acc[r] = [];
+                                    acc[r].push(row);
+                                    return acc;
+                                  }, {})
+                                ).map(([regName, regRows]: [string, any]) => (
+                                  <React.Fragment key={regName}>
+                                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                      <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem', paddingLeft: '24px' }}>
+                                        └ {regName}
+                                      </td>
+                                    </tr>
+                                    {regRows.map((row: any, index: number) => renderRow(row, index))}
+                                  </React.Fragment>
+                                ))
+                              ) : (
+                                rows.map((row: any, index: number) => renderRow(row, index))
+                              )}
                               </React.Fragment>
+                              );
+                            })
                             ))}
                           </React.Fragment>
                         );
