@@ -124,6 +124,15 @@ export default function App() {
   const filteredWarnings = warnings.filter((w: any) => {
     if (w.isCancelled) return false;
     
+    // バックエンドがmap.jsonから直接動的フェッチする仕様になったため、全てclass20s(市町村)で返ってきます
+    // 互換性維持のため、どのビューモードでもclass20sを表示するようにします
+    if (w.areaType === 'class20s') {
+      if (selectedParentArea && viewMode === 'municipality') {
+        return w.prefecture === selectedParentArea;
+      }
+      return true;
+    }
+    
     if (viewMode === 'prefecture') return w.areaType === 'prefecture';
     if (viewMode === 'region') return w.areaType === 'region' || w.areaType === 'subregion';
     if (viewMode === 'municipality') {
