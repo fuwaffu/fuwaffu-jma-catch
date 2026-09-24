@@ -175,15 +175,25 @@ export default {
     try {
       if (url.pathname === "/api/warnings") {
           return await cachedDynamicQuery('warnings', corsHeaders, async () => {
+              const fetchOpts = { headers: { 'User-Agent': 'jma-dashboard-bot/1.0 (+https://github.com/fuwaffu/fuwaffu-jma-catch)' } };
               const [mapRes, areaRes] = await Promise.all([
-                  fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
-                  fetch('https://www.jma.go.jp/bosai/common/const/area.json')
+                  fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json', fetchOpts),
+                  fetch('https://www.jma.go.jp/bosai/common/const/area.json', fetchOpts)
               ]);
               if (!mapRes.ok || !areaRes.ok) return [];
               
               const mapData = await mapRes.json() as any;
               const areaData = await areaRes.json() as any;
               
+              const areaCodeToName = (code: string) => {
+                  if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
+                  if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
+                  if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
+                  if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
+                  if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
+                  return code;
+              };
+
               const getHierarchyNames = (code: string) => {
                   let pref = '';
                   let reg = '';
@@ -225,45 +235,50 @@ export default {
               
               let warningsData: any[] = [];
               const reportDateTimeFallback = new Date().toISOString(); 
-              for (const report of mapData) {
-                  if (!report.areaTypes) continue;
-                  const rDate = report.reportDatetime || reportDateTimeFallback;
-                  for (const areaTypeObj of report.areaTypes) {
-                      for (const area of areaTypeObj.areas) {
-                          const areaCode = area.code;
-                          const { pref, reg, muni } = getHierarchyNames(areaCode);
-                          for (const w of area.warnings) {
-                              if (w.status === '発表' || w.status === '継続') {
-                                  const warningCode = w.code;
-                                  const wInfo = WARNING_CODES[warningCode];
-                                  if (wInfo) {
-                                      const baseObj = {
-                                          xmlId: `mapjson-${areaCode}-${warningCode}`,
-                                          reportDateTime: rDate,
-                                          prefecture: pref,
-                                          warningCode: warningCode,
-                                          warningName: wInfo.name,
-                                          warningLevel: wInfo.level,
-                                          infoType: '発表',
-                                          status: w.status,
-                                          isCancelled: false
-                                      };
-                                      
-                                      if (pref) warningsData.push({ ...baseObj, region: pref, areaType: 'prefecture' });
-                                      if (reg) warningsData.push({ ...baseObj, region: reg, areaType: 'region' });
-                                      if (muni) warningsData.push({ ...baseObj, region: muni, parentRegion: reg, areaType: 'municipality' });
+              try {
+                  for (const report of mapData) {
+                      if (!report.areaTypes) continue;
+                      const rDate = report.reportDatetime || reportDateTimeFallback;
+                      for (const areaTypeObj of report.areaTypes) {
+                          for (const area of areaTypeObj.areas) {
+                              const areaCode = area.code;
+                              const { pref, reg, muni } = getHierarchyNames(areaCode);
+                              for (const w of area.warnings) {
+                                  if (w.status === '発表' || w.status === '継続') {
+                                      const warningCode = w.code;
+                                      const wInfo = WARNING_CODES[warningCode];
+                                      if (wInfo) {
+                                          const baseObj = {
+                                              xmlId: `mapjson-${areaCode}-${warningCode}`,
+                                              reportDateTime: rDate,
+                                              prefecture: pref,
+                                              warningCode: warningCode,
+                                              warningName: wInfo.name,
+                                              warningLevel: wInfo.level,
+                                              infoType: '発表',
+                                              status: w.status,
+                                              isCancelled: false
+                                          };
+                                          
+                                          if (pref) warningsData.push({ ...baseObj, region: pref, areaType: 'prefecture' });
+                                          if (reg) warningsData.push({ ...baseObj, region: reg, areaType: 'region' });
+                                          if (muni) warningsData.push({ ...baseObj, region: muni, parentRegion: reg, areaType: 'municipality' });
+                                      }
                                   }
                               }
                           }
                       }
                   }
+              } catch (e: any) {
+                  console.error("Parse loop error:", e);
               }
               return warningsData;
           });
       }
       if (url.pathname === "/api/earthquakes") {
           return await cachedDynamicQuery('earthquakes', corsHeaders, async () => {
-              const eqRes = await fetch("https://www.jma.go.jp/bosai/quake/data/list.json");
+              const fetchOpts = { headers: { 'User-Agent': 'jma-dashboard-bot/1.0 (+https://github.com/fuwaffu/fuwaffu-jma-catch)' } };
+              const eqRes = await fetch("https://www.jma.go.jp/bosai/quake/data/list.json", fetchOpts);
               if (!eqRes.ok) return [];
               const eqList = await eqRes.json() as any[];
               return eqList.slice(0, 200).map((eq: any) => ({

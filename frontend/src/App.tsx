@@ -555,14 +555,16 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       if (isNaN(d.getTime())) return isoStr;
       const day = d.getDate();
       const hour = d.getHours();
+      const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
+      const weekDay = weekDays[d.getDay()];
       
       if (use24HourFormat) {
-        return `${day}日${hour}時`;
+        return `${day}日(${weekDay}) ${hour}時`;
       } else {
-        if (hour === 0) return `${day}日午前0時`;
-        if (hour < 12) return `${day}日午前${hour}時`;
-        if (hour === 12) return `${day}日午後0時`;
-        return `${day}日午後${hour - 12}時`;
+        if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
+        if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
+        if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
+        return `${day}日(${weekDay}) 午後${hour - 12}時`;
       }
     } catch { return isoStr; }
   };
