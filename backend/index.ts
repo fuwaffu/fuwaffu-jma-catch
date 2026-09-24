@@ -114,6 +114,44 @@ async function cachedKvQuery(
   return response;
 }
 
+async function cachedDynamicQuery(
+  cacheKey: string,
+  corsHeaders: Record<string, string>,
+  fetchDataFn: () => Promise<any[]>
+): Promise<Response> {
+  const cache = caches.default;
+  const cacheUrl = new URL(`https://jma-dashboard.internal/cache/${cacheKey}`);
+  const cacheRequest = new Request(cacheUrl.toString());
+
+  const cached = await cache.match(cacheRequest);
+  if (cached) {
+    const newHeaders = new Headers(cached.headers);
+    for (const [k, v] of Object.entries(corsHeaders)) {
+      newHeaders.set(k, v);
+    }
+    return new Response(cached.body, { status: cached.status, headers: newHeaders });
+  }
+
+  let data: any[] = [];
+  try {
+    data = await fetchDataFn();
+  } catch (e) {
+    console.error(`Dynamic fetch error for ${cacheKey}:`, e);
+    // Fallback if needed, but returning empty/stale is fine
+  }
+
+  const response = new Response(JSON.stringify(data), {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS}`,
+    },
+  });
+
+  await cache.put(cacheRequest, response.clone());
+  return response;
+}
+
 async function invalidateApiCaches(): Promise<void> {
   const cache = caches.default;
   const keys = ['warnings', 'earthquakes', 'typhoons', 'status'];
@@ -136,102 +174,95 @@ export default {
 
     try {
       if (url.pathname === "/api/warnings") {
-          try {
+          return await cachedDynamicQuery('warnings', corsHeaders, async () => {
               const [mapRes, areaRes] = await Promise.all([
                   fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
                   fetch('https://www.jma.go.jp/bosai/common/const/area.json')
               ]);
-              if (mapRes.ok && areaRes.ok) {
-                  const mapData = await mapRes.json() as any;
-                  const areaData = await areaRes.json() as any;
-                  
-                  const areaCodeToName = (code: string) => {
-                      if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-                      if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-                      if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-                      if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-                      if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-                      return code;
-                  };
-                  
-                  const getPrefecture = (code: string) => {
-                      let officeCode = '';
-                      if (areaData.class20s && areaData.class20s[code]) {
-                          const c15 = areaData.class20s[code].parent;
-                          const c10 = areaData.class15s && areaData.class15s[c15] ? areaData.class15s[c15].parent : '';
-                          officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
-                      } else if (areaData.class15s && areaData.class15s[code]) {
-                          const c10 = areaData.class15s[code].parent;
-                          officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
-                      } else if (areaData.class10s && areaData.class10s[code]) {
-                          officeCode = areaData.class10s[code].parent;
-                      } else if (areaData.offices && areaData.offices[code]) {
-                          officeCode = code;
-                      }
-                      
-                      const prefName = (areaData.offices && areaData.offices[officeCode]) ? areaData.offices[officeCode].name : (OFFICE_CODE_TO_PREF[officeCode] || '');
-                      return normalizePrefectureName(prefName);
+              if (!mapRes.ok || !areaRes.ok) return [];
+              
+              const mapData = await mapRes.json() as any;
+              const areaData = await areaRes.json() as any;
+              
+              const areaCodeToName = (code: string) => {
+                  if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
+                  if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
+                  if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
+                  if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
+                  if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
+                  return code;
+              };
+              
+              const getPrefecture = (code: string) => {
+                  let officeCode = '';
+                  if (areaData.class20s && areaData.class20s[code]) {
+                      const c15 = areaData.class20s[code].parent;
+                      const c10 = areaData.class15s && areaData.class15s[c15] ? areaData.class15s[c15].parent : '';
+                      officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
+                  } else if (areaData.class15s && areaData.class15s[code]) {
+                      const c10 = areaData.class15s[code].parent;
+                      officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
+                  } else if (areaData.class10s && areaData.class10s[code]) {
+                      officeCode = areaData.class10s[code].parent;
+                  } else if (areaData.offices && areaData.offices[code]) {
+                      officeCode = code;
                   }
                   
-                  let warningsData: any[] = [];
-                  const reportDateTimeFallback = new Date().toISOString(); 
-                  for (const report of mapData) {
-                      if (!report.areaTypes) continue;
-                      const rDate = report.reportDatetime || reportDateTimeFallback;
-                      for (const areaTypeObj of report.areaTypes) {
-                          for (const area of areaTypeObj.areas) {
-                              const areaCode = area.code;
-                              const regionName = areaCodeToName(areaCode);
-                              const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
-                              for (const w of area.warnings) {
-                                  if (w.status === '発表' || w.status === '継続') {
-                                      const warningCode = w.code;
-                                      const wInfo = WARNING_CODES[warningCode];
-                                      if (wInfo) {
-                                          warningsData.push({
-                                              xmlId: `mapjson-${areaCode}-${warningCode}`,
-                                              reportDateTime: rDate,
-                                              region: regionName,
-                                              prefecture: prefecture,
-                                              areaType: 'class20s',
-                                              warningCode: warningCode,
-                                              warningName: wInfo.name,
-                                              warningLevel: wInfo.level,
-                                              infoType: '発表',
-                                              status: w.status,
-                                              isCancelled: false
-                                          });
-                                      }
+                  const prefName = (areaData.offices && areaData.offices[officeCode]) ? areaData.offices[officeCode].name : (OFFICE_CODE_TO_PREF[officeCode] || '');
+                  return normalizePrefectureName(prefName);
+              }
+              
+              let warningsData: any[] = [];
+              const reportDateTimeFallback = new Date().toISOString(); 
+              for (const report of mapData) {
+                  if (!report.areaTypes) continue;
+                  const rDate = report.reportDatetime || reportDateTimeFallback;
+                  for (const areaTypeObj of report.areaTypes) {
+                      for (const area of areaTypeObj.areas) {
+                          const areaCode = area.code;
+                          const regionName = areaCodeToName(areaCode);
+                          const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
+                          for (const w of area.warnings) {
+                              if (w.status === '発表' || w.status === '継続') {
+                                  const warningCode = w.code;
+                                  const wInfo = WARNING_CODES[warningCode];
+                                  if (wInfo) {
+                                      warningsData.push({
+                                          xmlId: `mapjson-${areaCode}-${warningCode}`,
+                                          reportDateTime: rDate,
+                                          region: regionName,
+                                          prefecture: prefecture,
+                                          areaType: 'class20s',
+                                          warningCode: warningCode,
+                                          warningName: wInfo.name,
+                                          warningLevel: wInfo.level,
+                                          infoType: '発表',
+                                          status: w.status,
+                                          isCancelled: false
+                                      });
                                   }
                               }
                           }
                       }
                   }
-                  return new Response(JSON.stringify(warningsData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
               }
-          } catch (e: any) {
-              return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500, headers: corsHeaders });
-          }
-          // Fallback to KV if fetch fails (but KV is stale)
-          return await cachedKvQuery('warnings', env, corsHeaders);
+              return warningsData;
+          });
       }
       if (url.pathname === "/api/earthquakes") {
-          try {
+          return await cachedDynamicQuery('earthquakes', corsHeaders, async () => {
               const eqRes = await fetch("https://www.jma.go.jp/bosai/quake/data/list.json");
-              if (eqRes.ok) {
-                  const eqList = await eqRes.json() as any[];
-                  const earthquakesData = eqList.slice(0, 200).map((eq: any) => ({
-                      xmlId: eq.json || `initial-${eq.eid}`,
-                      originTime: eq.at,
-                      hypocenterName: eq.anm || '',
-                      magnitude: eq.mag || '',
-                      maxIntensity: eq.maxi || '',
-                      depth: 0
-                  }));
-                  return new Response(JSON.stringify(earthquakesData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-              }
-          } catch(e) {}
-          return await cachedKvQuery('earthquakes', env, corsHeaders);
+              if (!eqRes.ok) return [];
+              const eqList = await eqRes.json() as any[];
+              return eqList.slice(0, 200).map((eq: any) => ({
+                  xmlId: eq.json || `initial-${eq.eid}`,
+                  originTime: eq.at,
+                  hypocenterName: eq.anm || '',
+                  magnitude: eq.mag || '',
+                  maxIntensity: eq.maxi || '',
+                  depth: 0
+              }));
+          });
       }
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
       if (url.pathname === "/api/status") {
