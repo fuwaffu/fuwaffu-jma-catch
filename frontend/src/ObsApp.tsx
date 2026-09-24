@@ -108,23 +108,14 @@ export default function ObsApp() {
         attributionControl: false // 出典表記は独自のUIで行うため非表示
       });
 
-      fetch('/world.geojson')
-      .then(res => res.json())
-      .then(data => {
-        const targetMap = mapInstanceRef ? mapInstanceRef.current : map;
-        if (!targetMap) return;
-        const geoLayer = L.geoJSON(data, {
-          style: {
-            color: '#166534',
-            weight: 1,
-            fillColor: '#dcfce7',
-            fillOpacity: 1
-          }
-        });
-        (geoLayer as any).isBaseMap = true;
-        geoLayer.addTo(targetMap);
-      })
-      .catch(e => console.error('Failed to load map geojson', e));
+      // Pre-rendered 4K map background (much lighter processing for OBS)
+    const bounds: L.LatLngBoundsExpression = [[-20, 70], [60, 180]];
+    const targetMap = mapInstanceRef.current;
+    if (targetMap) {
+      const bgLayer = L.imageOverlay('/map_bg.png', bounds);
+      (bgLayer as any).isBaseMap = true;
+      bgLayer.addTo(targetMap);
+    }
     }
 
     const map = mapInstanceRef.current;
@@ -152,67 +143,7 @@ export default function ObsApp() {
     L.marker([lat, lon], { icon: typhoonIcon }).addTo(map);
 
     // 扇形（コーン）の外枠を計算するヘルパー
-    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
-      if (points.length <= 1) return [];
-      
-      const leftPoints: [number, number][] = [];
-      const rightPoints: [number, number][] = [];
-      
-      // 球面上の緯度経度から距離(km)と角度(ラジアン)を簡易計算
-      const getDistAndAngle = (p1: any, p2: any) => {
-        const dLat = (p2.lat - p1.lat) * 111;
-        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
-        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-        const angle = Math.atan2(dLat, dLon); 
-        return { dist, angle };
-      };
-
-      const toLatLng = (p: any, angle: number): [number, number] => {
-        return [
-          p.lat + (p.r * Math.sin(angle)) / 111,
-          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
-        ];
-      };
-
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const { dist, angle } = getDistAndAngle(p1, p2);
-        
-        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) {
-          continue; // 内包されるか同じ場所の場合は接線を引かない
-        }
-        
-        const theta = Math.asin((p1.r - p2.r) / dist);
-        
-        const a1Left = angle + Math.PI / 2 + theta;
-        const a1Right = angle - Math.PI / 2 - theta;
-        const a2Left = angle + Math.PI / 2 + theta;
-        const a2Right = angle - Math.PI / 2 - theta;
-
-        if (i === 0) {
-          // 最初の円の背面（お尻）の半円を追加
-          for (let a = a1Right; a <= a1Left + 0.01; a += Math.PI / 16) {
-            rightPoints.push(toLatLng(p1, a));
-          }
-        }
-        
-        leftPoints.push(toLatLng(p1, a1Left));
-        leftPoints.push(toLatLng(p2, a2Left));
-        
-        rightPoints.unshift(toLatLng(p1, a1Right));
-        rightPoints.unshift(toLatLng(p2, a2Right));
-
-        if (i === points.length - 2) {
-          // 最後の円の前面（頭）の半円を追加
-          for (let a = a2Left; a <= a2Right + 2 * Math.PI + 0.01; a += Math.PI / 16) {
-            leftPoints.push(toLatLng(p2, a));
-          }
-        }
-      }
-      
-      return [...leftPoints, ...rightPoints];
-    };
+    const getOuterTangentPolygon = (_points: any) => { return []; };
 
     // 白色の予報円（扇形外枠のみ）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
@@ -294,12 +225,12 @@ export default function ObsApp() {
         const weekDay = weekDays[d.getDay()];
         
         if (use24HourFormat) {
-          return `${day}日(${weekDay}) ${hour}時`;
+          return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> ${hour}時`;
         } else {
-          if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
-          if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
-          if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
-          return `${day}日(${weekDay}) 午後${hour - 12}時`;
+          if (hour === 0) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前0時`;
+          if (hour < 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前${hour}時`;
+          if (hour === 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後0時`;
+          return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後${hour - 12}時`;
         }
       } catch { return isoStr; }
     };
@@ -318,7 +249,7 @@ export default function ObsApp() {
     }).addTo(map);
 
     const curLabelIcon = L.divIcon({
-      html: `<div style="color:#FF2800;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${curTimeLabel}</div>`,
+      html: `<div style="color:#FF2800;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'Zen Kaku Gothic Paren', 'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${curTimeLabel}</div>`,
       className: '',
       iconSize: [0, 0]
     });
@@ -363,7 +294,15 @@ export default function ObsApp() {
         }).addTo(map);
       }
 
-      // 黒点（fcIcon）は非表示にするよう修正
+      // 予報円の中心に黒点を表示
+      L.circleMarker([fc.lat, fc.lon], {
+        radius: 3,
+        color: '#000',
+        fillColor: '#000',
+        fillOpacity: 1,
+        weight: 1
+      }).addTo(map);
+      
       if (fc.circleRadiusKm > 0) {
         L.circle([fc.lat, fc.lon], {
           radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: '#fff', fillOpacity: 0.1, weight: 1.5, dashArray: '5,5',
@@ -372,7 +311,7 @@ export default function ObsApp() {
 
       const timeLabel = formatForecastTime(fc.dateTime);
       const angle = (idx % 2 === 0) ? -45 : 135; 
-      const labelOffsetKm = (fc.circleRadiusKm || 50) + 70; 
+      const labelOffsetKm = (fc.circleRadiusKm || 50) + 90; 
       const rad = angle * Math.PI / 180;
       const dLat = (labelOffsetKm / 111) * Math.cos(rad);
       const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
@@ -384,16 +323,16 @@ export default function ObsApp() {
       }).addTo(map);
 
       const labelIcon = L.divIcon({
-        html: `<div style="color:#1e293b;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${timeLabel}</div>`,
+        html: `<div style="color:#1e293b;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'Zen Kaku Gothic Paren', 'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${timeLabel}</div>`,
         className: '',
         iconSize: [0, 0]
       });
-      L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
+      L.marker([labelLat, labelLon], { icon: labelIcon, zIndexOffset: 1000 }).addTo(map);
     });
 
     // 現在地の黒点/赤点（curIcon）は非表示にするよう修正
     // 軌跡
-    L.polyline(trackPoints, { color: '#333', weight: 2 }).addTo(map);
+    L.polyline(trackPoints, { color: '#ffffff', weight: 4, dashArray: '8,8', opacity: 1 }).addTo(map);
 
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
@@ -419,11 +358,11 @@ export default function ObsApp() {
   }, [activeTyphoon, use24HourFormat]);
 
   if (loading) {
-    return <div style={{ color: '#fff', padding: '20px', fontFamily: "'LINE Seed JP', sans-serif" }}>読み込み中...</div>;
+    return <div style={{ color: '#fff', padding: '20px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif" }}>読み込み中...</div>;
   }
 
   if (!activeTyphoon) {
-    return <div style={{ color: '#fff', padding: '20px', fontFamily: "'LINE Seed JP', sans-serif" }}>現在発表されている台風情報はありません。</div>;
+    return <div style={{ color: '#fff', padding: '20px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif" }}>現在発表されている台風情報はありません。</div>;
   }
 
   const num = String(activeTyphoon.tcNumber);
@@ -436,11 +375,11 @@ export default function ObsApp() {
       width: '1920px', 
       height: '1080px', 
       position: 'relative', 
-      fontFamily: "'LINE Seed JP', sans-serif",
+      fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif",
       overflow: 'hidden'
     }}>
       {/* 背景地図 */}
-      <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+      <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1, backgroundColor: '#475569' }} />
       
       {/* グラデーションオーバーレイ (情報が見やすいように) */}
       <div style={{
@@ -481,7 +420,9 @@ export default function ObsApp() {
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
-        gap: '40px'
+        gap: '40px',
+        transform: 'scale(0.7)',
+        transformOrigin: 'top left'
       }}>
         
         {/* 台風タイトル */}
@@ -495,7 +436,7 @@ export default function ObsApp() {
         }}>
           <div style={{ fontSize: '28px', color: '#93c5fd', marginBottom: '8px', fontWeight: 700 }}>
             台風<span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900, fontSize: '40px', margin: '0 6px' }}>{typhoonNum}</span>号
-            <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px' }}>({activeTyphoon.nameEn})</span>
+            <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px' }}><span style={{ fontFamily: "'Zen Kaku Gothic New', sans-serif", fontWeight: 900 }}>(</span>{activeTyphoon.nameEn}<span style={{ fontFamily: "'Zen Kaku Gothic New', sans-serif", fontWeight: 900 }}>)</span></span>
           </div>
           <div style={{ fontSize: '56px', fontWeight: 700, letterSpacing: '2px', lineHeight: 1.1 }}>
             {activeTyphoon.name}
@@ -527,17 +468,17 @@ export default function ObsApp() {
             
             <div style={{ color: '#94a3b8', fontSize: '22px' }}>中心気圧</div>
             <div style={{ fontSize: '42px', color: '#38bdf8', fontFamily: "'Lato', sans-serif", fontWeight: 900 }}>
-              {cur.pressure || '—'}<span style={{ fontSize: '24px', marginLeft: '8px', fontFamily: "'LINE Seed JP', sans-serif", fontWeight: 700 }}>hPa</span>
+              {cur.pressure || '—'}<span style={{ fontSize: '24px', marginLeft: '8px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif", fontWeight: 700 }}>hPa</span>
             </div>
 
             <div style={{ color: '#94a3b8', fontSize: '22px' }}>最大風速</div>
             <div style={{ fontSize: '42px', color: '#fbbf24', fontFamily: "'Lato', sans-serif", fontWeight: 900 }}>
-              {cur.maxWind || '—'}<span style={{ fontSize: '24px', marginLeft: '8px', fontFamily: "'LINE Seed JP', sans-serif", fontWeight: 700 }}>m/s</span>
+              {cur.maxWind || '—'}<span style={{ fontSize: '24px', marginLeft: '8px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif", fontWeight: 700 }}>m/s</span>
             </div>
             
             <div style={{ color: '#94a3b8', fontSize: '22px' }}>最大瞬間風速</div>
             <div style={{ fontSize: '42px', color: '#f87171', fontFamily: "'Lato', sans-serif", fontWeight: 900 }}>
-              {cur.gustWind || '—'}<span style={{ fontSize: '24px', marginLeft: '8px', fontFamily: "'LINE Seed JP', sans-serif", fontWeight: 700 }}>m/s</span>
+              {cur.gustWind || '—'}<span style={{ fontSize: '24px', marginLeft: '8px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif", fontWeight: 700 }}>m/s</span>
             </div>
           </div>
         </div>

@@ -279,7 +279,7 @@ export default function App() {
                   <>
                     <button 
                       onClick={handleBack}
-                      style={{ padding: '4px 12px', backgroundColor: '#e0f2fe', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                      style={{ padding: '4px 12px', backgroundColor: '#475569', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
                     >
                       ← {viewMode === 'municipality' ? '地方・区域に戻る' : '都道府県に戻る'}
                     </button>
@@ -566,12 +566,12 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       const weekDay = weekDays[d.getDay()];
       
       if (use24HourFormat) {
-        return `${day}日(${weekDay}) ${hour}時`;
+        return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> ${hour}時`;
       } else {
-        if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
-        if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
-        if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
-        return `${day}日(${weekDay}) 午後${hour - 12}時`;
+        if (hour === 0) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前0時`;
+        if (hour < 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午前${hour}時`;
+        if (hour === 12) return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後0時`;
+        return `${day}日<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">(</span>${weekDay}<span style="font-family: 'Zen Kaku Gothic New', sans-serif; font-weight: 900;">)</span> 午後${hour - 12}時`;
       }
     } catch { return isoStr; }
   };
@@ -586,23 +586,14 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
     mapInstanceRef.current = map;
 
-    fetch('/world.geojson')
-      .then(res => res.json())
-      .then(data => {
-        const targetMap = mapInstanceRef ? mapInstanceRef.current : map;
-        if (!targetMap) return;
-        const geoLayer = L.geoJSON(data, {
-          style: {
-            color: '#166534',
-            weight: 1,
-            fillColor: '#dcfce7',
-            fillOpacity: 1
-          }
-        });
-        (geoLayer as any).isBaseMap = true;
-        geoLayer.addTo(targetMap);
-      })
-      .catch(e => console.error('Failed to load map geojson', e));
+    // Pre-rendered 4K map background (much lighter processing for OBS)
+    const bounds: L.LatLngBoundsExpression = [[-20, 70], [60, 180]];
+    const targetMap = mapInstanceRef.current;
+    if (targetMap) {
+      const bgLayer = L.imageOverlay('/map_bg.png', bounds);
+      (bgLayer as any).isBaseMap = true;
+      bgLayer.addTo(targetMap);
+    }
 
     // 台風マーカー（現在位置）を「×」印に
     const typhoonIcon = L.divIcon({
@@ -618,67 +609,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     
     // ポリゴン生成ヘルパー
     // 扇形（コーン）の外枠を計算するヘルパー
-    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
-      if (points.length <= 1) return [];
-      
-      const leftPoints: [number, number][] = [];
-      const rightPoints: [number, number][] = [];
-      
-      // 球面上の緯度経度から距離(km)と角度(ラジアン)を簡易計算
-      const getDistAndAngle = (p1: any, p2: any) => {
-        const dLat = (p2.lat - p1.lat) * 111;
-        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
-        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-        const angle = Math.atan2(dLat, dLon); 
-        return { dist, angle };
-      };
-
-      const toLatLng = (p: any, angle: number): [number, number] => {
-        return [
-          p.lat + (p.r * Math.sin(angle)) / 111,
-          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
-        ];
-      };
-
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const { dist, angle } = getDistAndAngle(p1, p2);
-        
-        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) {
-          continue; // 内包されるか同じ場所の場合は接線を引かない
-        }
-        
-        const theta = Math.asin((p1.r - p2.r) / dist);
-        
-        const a1Left = angle + Math.PI / 2 + theta;
-        const a1Right = angle - Math.PI / 2 - theta;
-        const a2Left = angle + Math.PI / 2 + theta;
-        const a2Right = angle - Math.PI / 2 - theta;
-
-        if (i === 0) {
-          // 最初の円の背面（お尻）の半円を追加
-          for (let a = a1Right; a <= a1Left + 0.01; a += Math.PI / 16) {
-            rightPoints.push(toLatLng(p1, a));
-          }
-        }
-        
-        leftPoints.push(toLatLng(p1, a1Left));
-        leftPoints.push(toLatLng(p2, a2Left));
-        
-        rightPoints.unshift(toLatLng(p1, a1Right));
-        rightPoints.unshift(toLatLng(p2, a2Right));
-
-        if (i === points.length - 2) {
-          // 最後の円の前面（頭）の半円を追加
-          for (let a = a2Left; a <= a2Right + 2 * Math.PI + 0.01; a += Math.PI / 16) {
-            leftPoints.push(toLatLng(p2, a));
-          }
-        }
-      }
-      
-      return [...leftPoints, ...rightPoints];
-    };
+    const getOuterTangentPolygon = (_points: any) => { return []; };
 
     // 白色の予報円（Cone of uncertainty）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
@@ -763,7 +694,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     }).addTo(map);
 
     const curLabelIcon = L.divIcon({
-      html: `<div style="font-family: 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`,
+      html: `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`,
       iconSize: [0, 0], iconAnchor: [0, 0], className: '',
     });
     L.marker([curLabelLat, curLabelLon], { icon: curLabelIcon }).addTo(map);
@@ -821,7 +752,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       // 予報の暴風域（円で描画）
       const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
       if (fStormCircle && fStormCircle.radius > 0) {
-        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
+        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 3, dashArray: '6,6' }).addTo(map);
       }
 
       // 時刻ラベル：円の中心から線を延ばして表示
@@ -830,7 +761,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       // 進行方向（大まかに北東向きが多い）に対して邪魔になりにくい角度を計算
       // 奇数は左上(-45度)、偶数は右下(135度)などに振る
       const angle = (idx % 2 === 0) ? -45 : 135; 
-      const labelOffsetKm = (fc.circleRadiusKm || 50) + 70; // 円の外側に配置
+      const labelOffsetKm = (fc.circleRadiusKm || 50) + 90; // 円の外側に配置
       const rad = angle * Math.PI / 180;
       const dLat = (labelOffsetKm / 111) * Math.cos(rad);
       const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
@@ -844,15 +775,15 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
 
       // 時刻ラベル (枠の中心が線の終端にくるように調整)
       const labelIcon = L.divIcon({
-        html: `<div style="font-family: 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`,
+        html: `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`,
         iconSize: [0, 0], iconAnchor: [0, 0], className: '',
       });
-      L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
+      L.marker([labelLat, labelLon], { icon: labelIcon, zIndexOffset: 1000 }).addTo(map);
     });
 
     // 進路線
     if (trackPoints.length > 1) {
-      L.polyline(trackPoints, { color: '#333', weight: 2, dashArray: '8,6', opacity: 0.8 }).addTo(map);
+      L.polyline(trackPoints, { color: '#ffffff', weight: 4, dashArray: '8,8', opacity: 1 }).addTo(map);
     }
 
     // 全体が見えるようにフィット
