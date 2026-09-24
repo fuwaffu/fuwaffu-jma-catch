@@ -279,7 +279,7 @@ export default function App() {
                   <>
                     <button 
                       onClick={handleBack}
-                      style={{ padding: '4px 12px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                      style={{ padding: '4px 12px', backgroundColor: '#e0f2fe', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
                     >
                       ← {viewMode === 'municipality' ? '地方・区域に戻る' : '都道府県に戻る'}
                     </button>
@@ -586,10 +586,23 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
     mapInstanceRef.current = map;
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-      maxZoom: 16
-    }).addTo(mapInstanceRef.current);
+    fetch('/world.geojson')
+      .then(res => res.json())
+      .then(data => {
+        const targetMap = mapInstanceRef ? mapInstanceRef.current : map;
+        if (!targetMap) return;
+        const geoLayer = L.geoJSON(data, {
+          style: {
+            color: '#166534',
+            weight: 1,
+            fillColor: '#dcfce7',
+            fillOpacity: 1
+          }
+        });
+        (geoLayer as any).isBaseMap = true;
+        geoLayer.addTo(targetMap);
+      })
+      .catch(e => console.error('Failed to load map geojson', e));
 
     // 台風マーカー（現在位置）を「×」印に
     const typhoonIcon = L.divIcon({
@@ -796,7 +809,14 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         }).addTo(map);
       }
 
-      // 予報円の中心にマーカー (非表示)
+      // 予報円の中心に黒点を表示 (現在位置以外の予報点)
+      L.circleMarker([fc.lat, fc.lon], {
+        radius: 3,
+        color: '#000',
+        fillColor: '#000',
+        fillOpacity: 1,
+        weight: 1
+      }).addTo(map);
 
       // 予報の暴風域（円で描画）
       const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);

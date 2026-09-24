@@ -108,17 +108,30 @@ export default function ObsApp() {
         attributionControl: false // 出典表記は独自のUIで行うため非表示
       });
 
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-        maxZoom: 16
-      }).addTo(mapInstanceRef.current);
+      fetch('/world.geojson')
+      .then(res => res.json())
+      .then(data => {
+        const targetMap = mapInstanceRef ? mapInstanceRef.current : map;
+        if (!targetMap) return;
+        const geoLayer = L.geoJSON(data, {
+          style: {
+            color: '#166534',
+            weight: 1,
+            fillColor: '#dcfce7',
+            fillOpacity: 1
+          }
+        });
+        (geoLayer as any).isBaseMap = true;
+        geoLayer.addTo(targetMap);
+      })
+      .catch(e => console.error('Failed to load map geojson', e));
     }
 
     const map = mapInstanceRef.current;
     
     // 既存のレイヤーをクリア（タイルレイヤー以外）
-    map.eachLayer((layer) => {
-      if (!(layer instanceof L.TileLayer)) {
+    map.eachLayer((layer: any) => {
+      if (!layer.isBaseMap) {
         map.removeLayer(layer);
       }
     });
