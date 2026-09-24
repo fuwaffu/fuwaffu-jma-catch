@@ -184,33 +184,46 @@ export default {
               const mapData = await mapRes.json() as any;
               const areaData = await areaRes.json() as any;
               
-              const areaCodeToName = (code: string) => {
-                  if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-                  if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-                  if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-                  if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-                  if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-                  return code;
-              };
-              
-              const getPrefecture = (code: string) => {
-                  let officeCode = '';
+              const getHierarchyNames = (code: string) => {
+                  let pref = '';
+                  let reg = '';
+                  let muni = '';
+                  
                   if (areaData.class20s && areaData.class20s[code]) {
+                      muni = areaData.class20s[code].name;
                       const c15 = areaData.class20s[code].parent;
-                      const c10 = areaData.class15s && areaData.class15s[c15] ? areaData.class15s[c15].parent : '';
-                      officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
+                      if (areaData.class15s && areaData.class15s[c15]) {
+                          const c10 = areaData.class15s[c15].parent;
+                          if (areaData.class10s && areaData.class10s[c10]) {
+                              reg = areaData.class10s[c10].name;
+                              const off = areaData.class10s[c10].parent;
+                              if (areaData.offices && areaData.offices[off]) {
+                                  pref = areaData.offices[off].name;
+                              }
+                          }
+                      }
                   } else if (areaData.class15s && areaData.class15s[code]) {
                       const c10 = areaData.class15s[code].parent;
-                      officeCode = areaData.class10s && areaData.class10s[c10] ? areaData.class10s[c10].parent : '';
+                      if (areaData.class10s && areaData.class10s[c10]) {
+                          reg = areaData.class10s[c10].name;
+                          const off = areaData.class10s[c10].parent;
+                          if (areaData.offices && areaData.offices[off]) {
+                              pref = areaData.offices[off].name;
+                          }
+                      }
                   } else if (areaData.class10s && areaData.class10s[code]) {
-                      officeCode = areaData.class10s[code].parent;
+                      reg = areaData.class10s[code].name;
+                      const off = areaData.class10s[code].parent;
+                      if (areaData.offices && areaData.offices[off]) {
+                          pref = areaData.offices[off].name;
+                      }
                   } else if (areaData.offices && areaData.offices[code]) {
-                      officeCode = code;
+                      pref = areaData.offices[code].name;
                   }
                   
-                  const prefName = (areaData.offices && areaData.offices[officeCode]) ? areaData.offices[officeCode].name : (OFFICE_CODE_TO_PREF[officeCode] || '');
-                  return normalizePrefectureName(prefName);
-              }
+                  pref = normalizePrefectureName(pref || OFFICE_CODE_TO_PREF[code] || '');
+                  return { pref, reg, muni: muni || code };
+              };
               
               let warningsData: any[] = [];
               const reportDateTimeFallback = new Date().toISOString(); 
@@ -220,26 +233,27 @@ export default {
                   for (const areaTypeObj of report.areaTypes) {
                       for (const area of areaTypeObj.areas) {
                           const areaCode = area.code;
-                          const regionName = areaCodeToName(areaCode);
-                          const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
+                          const { pref, reg, muni } = getHierarchyNames(areaCode);
                           for (const w of area.warnings) {
                               if (w.status === '発表' || w.status === '継続') {
                                   const warningCode = w.code;
                                   const wInfo = WARNING_CODES[warningCode];
                                   if (wInfo) {
-                                      warningsData.push({
+                                      const baseObj = {
                                           xmlId: `mapjson-${areaCode}-${warningCode}`,
                                           reportDateTime: rDate,
-                                          region: regionName,
-                                          prefecture: prefecture,
-                                          areaType: 'class20s',
+                                          prefecture: pref,
                                           warningCode: warningCode,
                                           warningName: wInfo.name,
                                           warningLevel: wInfo.level,
                                           infoType: '発表',
                                           status: w.status,
                                           isCancelled: false
-                                      });
+                                      };
+                                      
+                                      if (pref) warningsData.push({ ...baseObj, region: pref, areaType: 'prefecture' });
+                                      if (reg) warningsData.push({ ...baseObj, region: reg, areaType: 'region' });
+                                      if (muni) warningsData.push({ ...baseObj, region: muni, parentRegion: reg, areaType: 'municipality' });
                                   }
                               }
                           }

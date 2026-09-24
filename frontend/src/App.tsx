@@ -14,7 +14,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
 
-  const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('prefecture');
+  const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('region');
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
   const [use24HourFormat, setUse24HourFormat] = useState(true);
 
@@ -137,7 +137,7 @@ export default function App() {
     if (viewMode === 'region') return w.areaType === 'region' || w.areaType === 'subregion';
     if (viewMode === 'municipality') {
       if (selectedParentArea) {
-        return w.areaType === 'municipality' && w.prefecture === selectedParentArea;
+        return w.areaType === 'municipality' && (w.prefecture === selectedParentArea || w.parentRegion === selectedParentArea);
       }
       return w.areaType === 'municipality';
     }
@@ -415,7 +415,7 @@ export default function App() {
                                 }}
                                 onClick={() => {
                                   if (viewMode === 'prefecture' || viewMode === 'region') {
-                                    setSelectedParentArea(row.prefecture || row.area);
+                                    setSelectedParentArea(viewMode === 'prefecture' ? (row.prefecture || row.area) : row.area);
                                     setViewMode('municipality');
                                   }
                                 }}
