@@ -765,10 +765,10 @@ export default {
             }
             
             // 既存データを更新 (解除フラグを落とす)
-            warningsData[existingIndex] = { ...warningsData[existingIndex], xmlId, reportDateTime, warningCode: kindCode || '', warningLevel: level, infoType, status, isCancelled: false };
+            warningsData[existingIndex] = { ...warningsData[existingIndex], xmlId, reportDateTime, warningCode: kindCode || '', warningLevel: level, infoType, status, class10, class15, isCancelled: false };
           } else {
             warningsData.push({
-              xmlId, reportDateTime, region, prefecture, areaType, 
+              xmlId, reportDateTime, region: finalMuni, prefecture: finalPref, areaType, class10, class15,
               warningCode: kindCode || '', warningName: wName, warningLevel: level, infoType, status, isCancelled: false
             });
           }
