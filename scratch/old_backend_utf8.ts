@@ -1,60 +1,60 @@
-import { XMLParser } from 'fast-xml-parser';
+﻿import { XMLParser } from 'fast-xml-parser';
 
 const OFFICE_CODE_TO_PREF: Record<string, string> = {
-  "011000": "北海道", "012000": "北海道", "013000": "北海道", "014030": "北海道", "014100": "北海道", "015000": "北海道", "016000": "北海道", "017000": "北海道",
-  "020000": "青森県", "030000": "岩手県", "040000": "宮城県", "050000": "秋田県", "060000": "山形県", "070000": "福島県",
-  "080000": "茨城県", "090000": "栃木県", "100000": "群馬県", "110000": "埼玉県", "120000": "千葉県", "130000": "東京都", "140000": "神奈川県",
-  "150000": "新潟県", "160000": "富山県", "170000": "石川県", "180000": "福井県", "190000": "山梨県", "200000": "長野県",
-  "210000": "岐阜県", "220000": "静岡県", "230000": "愛知県", "240000": "三重県",
-  "250000": "滋賀県", "260000": "京都府", "270000": "大阪府", "280000": "兵庫県", "290000": "奈良県", "300000": "和歌山県",
-  "310000": "鳥取県", "320000": "島根県", "330000": "岡山県", "340000": "広島県", "350000": "山口県",
-  "360000": "徳島県", "370000": "香川県", "380000": "愛媛県", "390000": "高知県",
-  "400000": "福岡県", "410000": "佐賀県", "420000": "長崎県", "430000": "熊本県", "440000": "大分県", "450000": "宮崎県", 
-  "460040": "鹿児島県", "460100": "鹿児島県",
-  "471000": "沖縄県", "472000": "沖縄県", "473000": "沖縄県", "474000": "沖縄県"
+  "011000": "蛹玲ｵｷ驕・, "012000": "蛹玲ｵｷ驕・, "013000": "蛹玲ｵｷ驕・, "014030": "蛹玲ｵｷ驕・, "014100": "蛹玲ｵｷ驕・, "015000": "蛹玲ｵｷ驕・, "016000": "蛹玲ｵｷ驕・, "017000": "蛹玲ｵｷ驕・,
+  "020000": "髱呈｣ｮ逵・, "030000": "蟯ｩ謇狗恁", "040000": "螳ｮ蝓守恁", "050000": "遘狗伐逵・, "060000": "螻ｱ蠖｢逵・, "070000": "遖丞ｳｶ逵・,
+  "080000": "闌ｨ蝓守恁", "090000": "譬・惠逵・, "100000": "鄒､鬥ｬ逵・, "110000": "蝓ｼ邇臥恁", "120000": "蜊・痩逵・, "130000": "譚ｱ莠ｬ驛ｽ", "140000": "逾槫･亥ｷ晉恁",
+  "150000": "譁ｰ貎溽恁", "160000": "蟇悟ｱｱ逵・, "170000": "遏ｳ蟾晉恁", "180000": "遖丈ｺ慕恁", "190000": "螻ｱ譴ｨ逵・, "200000": "髟ｷ驥守恁",
+  "210000": "蟯宣・逵・, "220000": "髱吝ｲ｡逵・, "230000": "諢帷衍逵・, "240000": "荳蛾㍾逵・,
+  "250000": "貊玖ｳ逵・, "260000": "莠ｬ驛ｽ蠎・, "270000": "螟ｧ髦ｪ蠎・, "280000": "蜈ｵ蠎ｫ逵・, "290000": "螂郁憶逵・, "300000": "蜥梧ｭ悟ｱｱ逵・,
+  "310000": "魑･蜿也恁", "320000": "蟲ｶ譬ｹ逵・, "330000": "蟯｡螻ｱ逵・, "340000": "蠎・ｳｶ逵・, "350000": "螻ｱ蜿｣逵・,
+  "360000": "蠕ｳ蟲ｶ逵・, "370000": "鬥吝ｷ晉恁", "380000": "諢帛ｪ帷恁", "390000": "鬮倡衍逵・,
+  "400000": "遖丞ｲ｡逵・, "410000": "菴占ｳ逵・, "420000": "髟ｷ蟠守恁", "430000": "辭頑悽逵・, "440000": "螟ｧ蛻・恁", "450000": "螳ｮ蟠守恁", 
+  "460040": "鮖ｿ蜈仙ｳｶ逵・, "460100": "鮖ｿ蜈仙ｳｶ逵・,
+  "471000": "豐也ｸ・恁", "472000": "豐也ｸ・恁", "473000": "豐也ｸ・恁", "474000": "豐也ｸ・恁"
 };
 
 const WARNING_CODES: Record<string, { name: string; level: string; color: string }> = {
-  '33': { name: '大雨特別警報', level: 'special', color: '#8B008B' },
-  '35': { name: '暴風特別警報', level: 'special', color: '#8B008B' },
-  '32': { name: '暴風雪特別警報', level: 'special', color: '#8B008B' },
-  '36': { name: '大雪特別警報', level: 'special', color: '#8B008B' },
-  '37': { name: '波浪特別警報', level: 'special', color: '#8B008B' },
-  '38': { name: '高潮特別警報', level: 'special', color: '#8B008B' },
-  '03': { name: '大雨警報', level: 'warning', color: '#FF2800' },
-  '04': { name: '洪水警報', level: 'warning', color: '#FF2800' },
-  '05': { name: '暴風警報', level: 'warning', color: '#FF2800' },
-  '06': { name: '暴風雪警報', level: 'warning', color: '#FF2800' },
-  '07': { name: '大雪警報', level: 'warning', color: '#FF2800' },
-  '08': { name: '波浪警報', level: 'warning', color: '#FF2800' },
-  '09': { name: '高潮警報', level: 'warning', color: '#FF2800' },
-  '10': { name: '大雨注意報', level: 'advisory', color: '#FFD700' },
-  '13': { name: '洪水注意報', level: 'advisory', color: '#FFD700' },
-  '14': { name: '雷注意報', level: 'advisory', color: '#FFD700' },
-  '15': { name: '強風注意報', level: 'advisory', color: '#FFD700' },
-  '16': { name: '風雪注意報', level: 'advisory', color: '#FFD700' },
-  '17': { name: '大雪注意報', level: 'advisory', color: '#FFD700' },
-  '18': { name: '濃霧注意報', level: 'advisory', color: '#FFD700' },
-  '19': { name: '波浪注意報', level: 'advisory', color: '#FFD700' },
-  '20': { name: '高潮注意報', level: 'advisory', color: '#FFD700' },
-  '21': { name: 'なだれ注意報', level: 'advisory', color: '#FFD700' },
-  '22': { name: '着氷注意報', level: 'advisory', color: '#FFD700' },
-  '23': { name: '着雪注意報', level: 'advisory', color: '#FFD700' },
-  '24': { name: '融雪注意報', level: 'advisory', color: '#FFD700' },
-  '25': { name: '霜注意報', level: 'advisory', color: '#FFD700' },
-  '26': { name: '低温注意報', level: 'advisory', color: '#FFD700' },
-  '27': { name: '乾燥注意報', level: 'advisory', color: '#FFD700' },
+  '33': { name: '螟ｧ髮ｨ迚ｹ蛻･隴ｦ蝣ｱ', level: 'special', color: '#8B008B' },
+  '35': { name: '證ｴ鬚ｨ迚ｹ蛻･隴ｦ蝣ｱ', level: 'special', color: '#8B008B' },
+  '32': { name: '證ｴ鬚ｨ髮ｪ迚ｹ蛻･隴ｦ蝣ｱ', level: 'special', color: '#8B008B' },
+  '36': { name: '螟ｧ髮ｪ迚ｹ蛻･隴ｦ蝣ｱ', level: 'special', color: '#8B008B' },
+  '37': { name: '豕｢豬ｪ迚ｹ蛻･隴ｦ蝣ｱ', level: 'special', color: '#8B008B' },
+  '38': { name: '鬮俶ｽｮ迚ｹ蛻･隴ｦ蝣ｱ', level: 'special', color: '#8B008B' },
+  '03': { name: '螟ｧ髮ｨ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '04': { name: '豢ｪ豌ｴ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '05': { name: '證ｴ鬚ｨ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '06': { name: '證ｴ鬚ｨ髮ｪ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '07': { name: '螟ｧ髮ｪ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '08': { name: '豕｢豬ｪ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '09': { name: '鬮俶ｽｮ隴ｦ蝣ｱ', level: 'warning', color: '#FF2800' },
+  '10': { name: '螟ｧ髮ｨ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '13': { name: '豢ｪ豌ｴ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '14': { name: '髮ｷ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '15': { name: '蠑ｷ鬚ｨ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '16': { name: '鬚ｨ髮ｪ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '17': { name: '螟ｧ髮ｪ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '18': { name: '豼・悸豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '19': { name: '豕｢豬ｪ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '20': { name: '鬮俶ｽｮ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '21': { name: '縺ｪ縺繧梧ｳｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '22': { name: '逹豌ｷ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '23': { name: '逹髮ｪ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '24': { name: '陞埼妛豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '25': { name: '髴懈ｳｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '26': { name: '菴取ｸｩ豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
+  '27': { name: '荵ｾ辯･豕ｨ諢丞ｱ', level: 'advisory', color: '#FFD700' },
 };
 
 export function normalizePrefectureName(prefecture: string): string {
-  if (prefecture.includes('地方') && (prefecture.includes('宗谷') || prefecture.includes('上川') || prefecture.includes('留萌') || prefecture.includes('網走') || prefecture.includes('北見') || prefecture.includes('紋別') || prefecture.includes('十勝') || prefecture.includes('釧路') || prefecture.includes('根室') || prefecture.includes('胆振') || prefecture.includes('日高') || prefecture.includes('石狩') || prefecture.includes('空知') || prefecture.includes('後志') || prefecture.includes('渡島') || prefecture.includes('檜山'))) {
-    return '北海道';
-  } else if (prefecture.includes('沖縄') || prefecture.includes('大東島') || prefecture.includes('宮古島') || prefecture.includes('八重山')) {
-    return '沖縄県';
-  } else if (prefecture.includes('奄美') || prefecture.includes('鹿児島')) {
-    return '鹿児島県';
-  } else if (prefecture === '東京地方') {
-    return '東京都';
+  if (prefecture.includes('蝨ｰ譁ｹ') && (prefecture.includes('螳苓ｰｷ') || prefecture.includes('荳雁ｷ・) || prefecture.includes('逡呵酔') || prefecture.includes('邯ｲ襍ｰ') || prefecture.includes('蛹苓ｦ・) || prefecture.includes('邏句挨') || prefecture.includes('蜊∝享') || prefecture.includes('驥ｧ霍ｯ') || prefecture.includes('譬ｹ螳､') || prefecture.includes('閭・険') || prefecture.includes('譌･鬮・) || prefecture.includes('遏ｳ迢ｩ') || prefecture.includes('遨ｺ遏･') || prefecture.includes('蠕悟ｿ・) || prefecture.includes('貂｡蟲ｶ') || prefecture.includes('讙懷ｱｱ'))) {
+    return '蛹玲ｵｷ驕・;
+  } else if (prefecture.includes('豐也ｸ・) || prefecture.includes('螟ｧ譚ｱ蟲ｶ') || prefecture.includes('螳ｮ蜿､蟲ｶ') || prefecture.includes('蜈ｫ驥榊ｱｱ')) {
+    return '豐也ｸ・恁';
+  } else if (prefecture.includes('螂・ｾ・) || prefecture.includes('鮖ｿ蜈仙ｳｶ')) {
+    return '鮖ｿ蜈仙ｳｶ逵・;
+  } else if (prefecture === '譚ｱ莠ｬ蝨ｰ譁ｹ') {
+    return '譚ｱ莠ｬ驛ｽ';
   }
   return prefecture;
 }
@@ -70,76 +70,7 @@ const parser = new XMLParser({
   removeNSPrefix: true,
 });
 
-// Cache TTL: 10分
-const CACHE_TTL_SECONDS = 60;
-
-let cachedAreaData: any = null;
-async function getAreaData(env: Env) {
-  if (cachedAreaData) return cachedAreaData;
-  try {
-    const res = await fetch('https://www.jma.go.jp/bosai/common/const/area.json');
-    if (res.ok) {
-      cachedAreaData = await res.json();
-      return cachedAreaData;
-    }
-  } catch(e) {}
-  return null;
-}
-
-const areaCodeToName = (code: string, areaData: any) => {
-    if (!areaData) return code;
-    if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-    if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-    if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-    if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-    if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-    return code;
-};
-
-const getHierarchyNames = (code: string, areaData: any) => {
-    let pref = '';
-    let class10 = '';
-    let class15 = '';
-    let muni = code;
-    if (areaData) muni = areaCodeToName(code, areaData);
-    
-    if (areaData) {
-        if (areaData.class20s && areaData.class20s[code]) {
-            const parent = areaData.class20s[code].parent;
-            if (areaData.class15s && areaData.class15s[parent]) {
-                class15 = areaData.class15s[parent].name;
-                const c10 = areaData.class15s[parent].parent;
-                if (areaData.class10s && areaData.class10s[c10]) {
-                    class10 = areaData.class10s[c10].name;
-                    const off = areaData.class10s[c10].parent;
-                    if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-                }
-            } else if (areaData.class10s && areaData.class10s[parent]) {
-                class10 = areaData.class10s[parent].name;
-                const off = areaData.class10s[parent].parent;
-                if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-            }
-        } else if (areaData.class15s && areaData.class15s[code]) {
-            class15 = areaData.class15s[code].name;
-            const c10 = areaData.class15s[code].parent;
-            if (areaData.class10s && areaData.class10s[c10]) {
-                class10 = areaData.class10s[c10].name;
-                const off = areaData.class10s[c10].parent;
-                if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-            }
-        } else if (areaData.class10s && areaData.class10s[code]) {
-            class10 = areaData.class10s[code].name;
-            const off = areaData.class10s[code].parent;
-            if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-        } else if (areaData.offices && areaData.offices[code]) {
-            pref = areaData.offices[code].name;
-        }
-    }
-    
-    pref = normalizePrefectureName(pref || OFFICE_CODE_TO_PREF[code] || '');
-    return { pref, class10, class15, muni };
-};
-
+// Cache TTL: 10蛻・const CACHE_TTL_SECONDS = 60;
 
 async function cachedKvQuery(
   cacheKey: string,
@@ -147,7 +78,7 @@ async function cachedKvQuery(
   corsHeaders: Record<string, string>
 ): Promise<Response> {
   const cache = caches.default;
-  const cacheUrl = new URL(`https://jma-dashboard.internal/cache/${cacheKey}`);
+  const cacheUrl = new URL(`https://cache-internal/${cacheKey}`);
   const cacheRequest = new Request(cacheUrl.toString());
 
   const cached = await cache.match(cacheRequest);
@@ -159,14 +90,12 @@ async function cachedKvQuery(
     return new Response(cached.body, { status: cached.status, headers: newHeaders });
   }
 
-  // KVからデータを取得
-  let data: any = await env.WEATHER_DATA_STORE.get(cacheKey, { type: 'json' });
+  // KV縺九ｉ繝・・繧ｿ繧貞叙蠕・  let data: any = await env.WEATHER_DATA_STORE.get(cacheKey, { type: 'json' });
   if (data === null) {
     if (cacheKey === 'status') data = { lastUpdated: null };
     else data = [];
   } else if (Array.isArray(data)) {
-    // クライアントに返す前に論理削除(isCancelled)されたデータを除外
-    data = data.filter((d: any) => !d.isCancelled);
+    // 繧ｯ繝ｩ繧､繧｢繝ｳ繝医↓霑斐☆蜑阪↓隲也炊蜑企勁(isCancelled)縺輔ｌ縺溘ョ繝ｼ繧ｿ繧帝勁螟・    data = data.filter((d: any) => !d.isCancelled);
   }
 
   const body = JSON.stringify(data);
@@ -186,7 +115,7 @@ async function invalidateApiCaches(): Promise<void> {
   const cache = caches.default;
   const keys = ['warnings', 'earthquakes', 'typhoons', 'status'];
   for (const key of keys) {
-    const cacheUrl = new URL(`https://jma-dashboard.internal/cache/${key}`);
+    const cacheUrl = new URL(`https://cache-internal/${key}`);
     await cache.delete(new Request(cacheUrl.toString()));
   }
 }
@@ -203,90 +132,31 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
-      if (url.pathname === "/api/warnings") {
-          try {
-              const [mapRes, areaRes] = await Promise.all([
-                  fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
-                  fetch('https://www.jma.go.jp/bosai/common/const/area.json')
-              ]);
-              if (mapRes.ok && areaRes.ok) {
-                  const mapData = await mapRes.json() as any;
-                  const areaData = await areaRes.json() as any;
-                  
-                  const areaCodeToName = (code: string) => {
-                      if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-                      if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-                      if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-                      if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-                      if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-                      return code;
-                  };
-                  
-                  const getPrefecture = (code: string) => {
-                      if (areaData.class20s && areaData.class20s[code]) return normalizePrefectureName(areaData.class20s[code].parent);
-                      if (areaData.class15s && areaData.class15s[code]) return normalizePrefectureName(areaData.class15s[code].parent);
-                      if (areaData.class10s && areaData.class10s[code]) return normalizePrefectureName(areaData.class10s[code].parent);
-                      return '';
-                  }
-                  
-                  let warningsData: any[] = [];
-                  const reportDateTimeFallback = new Date().toISOString(); 
-                  for (const report of mapData) {
-                      if (!report.areaTypes) continue;
-                      const rDate = report.reportDatetime || reportDateTimeFallback;
-                      for (const areaTypeObj of report.areaTypes) {
-                          for (const area of areaTypeObj.areas) {
-                              const areaCode = area.code;
-                              const regionName = areaCodeToName(areaCode);
-                              const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
-                              for (const w of area.warnings) {
-                                  if (w.status === '発表' || w.status === '継続') {
-                                      const warningCode = w.code;
-                                      const wInfo = WARNING_CODES[warningCode];
-                                      if (wInfo) {
-                                          warningsData.push({
-                                              xmlId: `mapjson-${areaCode}-${warningCode}`,
-                                              reportDateTime: rDate,
-                                              region: regionName,
-                                              prefecture: prefecture,
-                                              areaType: 'class20s',
-                                              warningCode: warningCode,
-                                              warningName: wInfo.name,
-                                              warningLevel: wInfo.level,
-                                              infoType: '発表',
-                                              status: w.status,
-                                              isCancelled: false
-                                          });
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
-                  return new Response(JSON.stringify(warningsData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-              }
-          } catch (e: any) {
-              return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500, headers: corsHeaders });
-          }
-          // Fallback to KV if fetch fails (but KV is stale)
-          return await cachedKvQuery('warnings', env, corsHeaders);
-      }
+      if (url.pathname === "/api/warnings") return await cachedKvQuery('warnings', env, corsHeaders);
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
       if (url.pathname === "/api/status") {
-        let status: any = { lastUpdated: null };
+        let status: any = { lastUpdated: null, isSyncing: false, progress: 0 };
         try {
           const raw = await env.WEATHER_DATA_STORE.get('status');
           if (raw) status = { ...status, ...JSON.parse(raw) };
-        } catch(e) {}
+          const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+          const remaining = (state.items || []).length;
+          const total = state.total || 0;
+          const current = total - remaining;
+          status.current = current;
+          status.target = total;
+          if (total > 0) {
+            status.isSyncing = remaining > 0;
+            status.progress = Math.min(100, Math.round((current / total) * 100));
+          } else {
+            status.isSyncing = false;
+            status.progress = 100;
+          }
+        } catch(e) {
+          console.error('Status error:', e);
+        }
         return new Response(JSON.stringify(status), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      if (url.pathname === "/api/debug-clear") {
-          await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify([]));
-          await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
-          await invalidateApiCaches();
-          return new Response("Wiped KV warnings and cache", { headers: corsHeaders });
       }
       
       if (url.pathname === "/api/trigger-update") {
@@ -314,7 +184,7 @@ export default {
               }
           }
           
-          // 制限ギリギリまで処理: 逐次処理しながら時間を計測
+          // 蛻ｶ髯舌ぐ繝ｪ繧ｮ繝ｪ縺ｾ縺ｧ蜃ｦ逅・ 騾先ｬ｡蜃ｦ逅・＠縺ｪ縺後ｉ譎る俣繧定ｨ域ｸｬ
           const processed = await this.processQueueAdaptive(syncQueue, env, ctx, maxXmlLengthOpt);
           
           state.items = syncQueue;
@@ -357,18 +227,14 @@ export default {
     return new Response("Not Found", { status: 404, headers: corsHeaders });
   },
 
-  // 制限ギリギリまで適応的にキューを処理する
-  // syncQueue は in-place で splice されるので呼び出し元でそのまま保存可能
+  // 蛻ｶ髯舌ぐ繝ｪ繧ｮ繝ｪ縺ｾ縺ｧ驕ｩ蠢懃噪縺ｫ繧ｭ繝･繝ｼ繧貞・逅・☆繧・  // syncQueue 縺ｯ in-place 縺ｧ splice 縺輔ｌ繧九・縺ｧ蜻ｼ縺ｳ蜃ｺ縺怜・縺ｧ縺昴・縺ｾ縺ｾ菫晏ｭ伜庄閭ｽ
   async processQueueAdaptive(syncQueue: any[], env: Env, ctx: ExecutionContext, maxXmlLengthOpt?: number): Promise<number> {
-    const MAX_SUBREQUESTS = 99999; // Render.com 無制限
-    // クライアントからの指定があればそれを使用、なければ500KB
+    const MAX_SUBREQUESTS = 99999; // Render.com 辟｡蛻ｶ髯・    // 繧ｯ繝ｩ繧､繧｢繝ｳ繝医°繧峨・謖・ｮ壹′縺ゅｌ縺ｰ縺昴ｌ繧剃ｽｿ逕ｨ縲√↑縺代ｌ縺ｰ500KB
     const MAX_XML_LENGTH_PER_BATCH = maxXmlLengthOpt || 500000; 
     let processed = 0;
     let totalXmlLength = 0;
     
-    // 必要なデータストアを先にロード（スマートGET）
-    let warningsData: any[] | null = null;
-    const areaData = await getAreaData(env);
+    // 蠢・ｦ√↑繝・・繧ｿ繧ｹ繝医い繧貞・縺ｫ繝ｭ繝ｼ繝会ｼ医せ繝槭・繝・ET・・    let warningsData: any[] | null = null;
     let earthquakesData: any[] | null = null;
     let typhoonsData: any[] | null = null;
     let warningsUpdated = false;
@@ -377,18 +243,18 @@ export default {
     
     try {
       while (syncQueue.length > 0 && processed < MAX_SUBREQUESTS) {
-        // CPU予算チェック (XML文字列長の合計で判定)
-        // すでに上限を超えていたら次のリクエストに回す
+        // CPU莠育ｮ励メ繧ｧ繝・け (XML譁・ｭ怜・髟ｷ縺ｮ蜷郁ｨ医〒蛻､螳・
+        // 縺吶〒縺ｫ荳企剞繧定ｶ・∴縺ｦ縺・◆繧画ｬ｡縺ｮ繝ｪ繧ｯ繧ｨ繧ｹ繝医↓蝗槭☆
         if (totalXmlLength > MAX_XML_LENGTH_PER_BATCH && processed > 0) {
           console.log(`[Adaptive] XML length budget reached: ${totalXmlLength} bytes used, stopping after ${processed} items`);
           break;
         }
         
-        const item = syncQueue[0]; // peek (まだ消さない)
+        const item = syncQueue[0]; // peek (縺ｾ縺豸医＆縺ｪ縺・
         const { id, link, updated, telegramCode } = item;
         
         try {
-          // XML取得 (I/O: CPU時間に含まれない)
+          // XML蜿門ｾ・(I/O: CPU譎る俣縺ｫ蜷ｫ縺ｾ繧後↑縺・
           const xmlRes = await fetch(link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
           if (!xmlRes.ok) {
             syncQueue.shift(); processed++;
@@ -396,32 +262,29 @@ export default {
           }
           const xmlText = await xmlRes.text();
           
-          // サイズが大きすぎるファイル(Poison Pill)はパースすると即座に10ms制限を超えてクラッシュするためスキップ。
-          // 500KB以上の単一ファイルは無料枠では安全にパースできない可能性が高い
+          // 繧ｵ繧､繧ｺ縺悟､ｧ縺阪☆縺弱ｋ繝輔ぃ繧､繝ｫ(Poison Pill)縺ｯ繝代・繧ｹ縺吶ｋ縺ｨ蜊ｳ蠎ｧ縺ｫ10ms蛻ｶ髯舌ｒ雜・∴縺ｦ繧ｯ繝ｩ繝・す繝･縺吶ｋ縺溘ａ繧ｹ繧ｭ繝・・縲・          // 500KB莉･荳翫・蜊倅ｸ繝輔ぃ繧､繝ｫ縺ｯ辟｡譁呎棧縺ｧ縺ｯ螳牙・縺ｫ繝代・繧ｹ縺ｧ縺阪↑縺・庄閭ｽ諤ｧ縺碁ｫ倥＞
           if (xmlText.length > 600000) {
             console.warn(`[Adaptive] Skipping extremely large file (size: ${xmlText.length} bytes): ${link}`);
             syncQueue.shift(); processed++; continue;
           }
           
-          // XML長を加算
-          totalXmlLength += xmlText.length;
+          // XML髟ｷ繧貞刈邂・          totalXmlLength += xmlText.length;
           
-          // XMLパース (CPU集約)
+          // XML繝代・繧ｹ (CPU髮・ｴ・
           const xmlData = parser.parse(xmlText);
           
           const report = xmlData.Report;
           if (!report) { syncQueue.shift(); processed++; continue; }
           
           const status = report.Control?.Status;
-          if (status !== '通常') { syncQueue.shift(); processed++; continue; }
+          if (status !== '騾壼ｸｸ') { syncQueue.shift(); processed++; continue; }
           
           const infoType = report.Head?.InfoType;
           const reportDateTime = report.Head?.ReportDateTime;
           
-          // データストアの遅延ロード（初回のみKVからGET）
-          if (telegramCode === 'VPWW') {
+          // 繝・・繧ｿ繧ｹ繝医い縺ｮ驕・ｻｶ繝ｭ繝ｼ繝会ｼ亥・蝗槭・縺ｿKV縺九ｉGET・・          if (telegramCode === 'VPWW') {
             if (warningsData === null) warningsData = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData, areaData);
+            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
             warningsUpdated = true;
           } else if (telegramCode === 'VXSE') {
             if (earthquakesData === null) earthquakesData = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
@@ -436,13 +299,13 @@ export default {
           console.error('Failed to process id: ' + id, e);
         }
         
-        syncQueue.shift(); // 正常完了 → キューから除去
+        syncQueue.shift(); // 豁｣蟶ｸ螳御ｺ・竊・繧ｭ繝･繝ｼ縺九ｉ髯､蜴ｻ
         processed++;
       }
       
-      // 変更があったデータストアだけPUT
+      // 螟画峩縺後≠縺｣縺溘ョ繝ｼ繧ｿ繧ｹ繝医い縺縺善UT
       if (warningsUpdated && warningsData) {
-        // KVの肥大化を防ぐため、論理削除(isCancelled)されてから48時間経過した古いデータは物理削除する
+        // KV縺ｮ閧･螟ｧ蛹悶ｒ髦ｲ縺舌◆繧√∬ｫ也炊蜑企勁(isCancelled)縺輔ｌ縺ｦ縺九ｉ48譎る俣邨碁℃縺励◆蜿､縺・ョ繝ｼ繧ｿ縺ｯ迚ｩ逅・炎髯､縺吶ｋ
         const twoDaysAgo = Date.now() - 48 * 60 * 60 * 1000;
         warningsData = warningsData.filter(w => !(w.isCancelled && new Date(w.reportDateTime).getTime() < twoDaysAgo));
         await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
@@ -471,11 +334,10 @@ export default {
   },
 
   async scheduledWork(env: Env, ctx: ExecutionContext) {
-    // 1. フィードをチェックして新着があればキューに追加
+    // 1. 繝輔ぅ繝ｼ繝峨ｒ繝√ぉ繝・け縺励※譁ｰ逹縺後≠繧後・繧ｭ繝･繝ｼ縺ｫ霑ｽ蜉
     await this.updateJmaData(env);
     
-    // 2. キューに残りがあれば適応的にバッチ処理（ユーザーアクセス不要）
-    const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+    // 2. 繧ｭ繝･繝ｼ縺ｫ谿九ｊ縺後≠繧後・驕ｩ蠢懃噪縺ｫ繝舌ャ繝∝・逅・ｼ医Θ繝ｼ繧ｶ繝ｼ繧｢繧ｯ繧ｻ繧ｹ荳崎ｦ・ｼ・    const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
     let syncQueue: any[] = state.items || [];
     
     if (syncQueue.length > 0) {
@@ -503,8 +365,7 @@ export default {
     const processedFeedsSet = new Set(processedFeeds);
     
     let fetchCount = 0;
-    const MAX_SUBREQUESTS = 99999; // Render.com 無制限
-    let globalMaxEntryTime = 0;
+    const MAX_SUBREQUESTS = 99999; // Render.com 辟｡蛻ｶ髯・    let globalMaxEntryTime = 0;
     let warningsUpdated = false;
     let earthquakesUpdated = false;
     let typhoonsUpdated = false;
@@ -546,10 +407,10 @@ export default {
             const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
             const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].match(/_(VPWW|VXWW|VXXX)/));
             
-            // 初期同期では、警報はmap.jsonで完璧に取得済みのため、XMLからの過去警報の取得はスキップする（解除漏れを防ぐため）
-            candidateEntries = [
+            // 繝ｦ繝ｼ繧ｶ繝ｼ謖・ｮ夐壹ｊ縲∬ｭｦ蝣ｱ繝ｻ蝨ｰ髴・・蜿ｰ鬚ｨ繧貞・縺ｦ蜿門ｾ励☆繧・            // 蛻晄悄蜷梧悄縺ｧ縺ｮAPI繧ｳ繝ｼ繝ｫ荳企剞雜・℃繧帝亟縺舌◆繧√∬ｭｦ蝣ｱ縺ｯ逶ｴ霑・0莉ｶ縺ｫ蛻ｶ髯・            candidateEntries = [
                 ...typhoons.slice(0, 2),
-                ...earthquakes.slice(0, 10)
+                ...earthquakes.slice(0, 10),
+                ...warnings.slice(0, 50)
             ].sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
         } else {
             candidateEntries = candidateEntries.slice(0, 150);
@@ -559,7 +420,7 @@ export default {
         for (const entry of candidateEntries) {
           if (processedFeedsSet.has(entry.id)) continue;
           
-          // <updated>タイムスタンプによる差分判定 (l-telopスキル準拠)
+          // <updated>繧ｿ繧､繝繧ｹ繧ｿ繝ｳ繝励↓繧医ｋ蟾ｮ蛻・愛螳・(l-telop繧ｹ繧ｭ繝ｫ貅匁侠)
           const entryTime = new Date(entry.updated).getTime();
           if (entryTime > globalMaxEntryTime) globalMaxEntryTime = entryTime;
           if (!isInitialSync && entryTime <= lastUpdated) continue;
@@ -569,8 +430,7 @@ export default {
 
         
         const messagesToSend = [];
-        // リアルタイム性重視のため、ATOMフィードの並び順（新しい順）のまま処理する
-        for (const entry of newEntries) {
+        // 繝ｪ繧｢繝ｫ繧ｿ繧､繝諤ｧ驥崎ｦ悶・縺溘ａ縲、TOM繝輔ぅ繝ｼ繝峨・荳ｦ縺ｳ鬆・ｼ域眠縺励＞鬆・ｼ峨・縺ｾ縺ｾ蜃ｦ逅・☆繧・        for (const entry of newEntries) {
           const id = entry.id;
           const updated = entry.updated;
           const link = entry.link?.['@_href'];
@@ -593,48 +453,25 @@ export default {
 
         if (messagesToSend.length > 0) {
           try {
-            let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-            let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
-            let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
-            const areaData = await getAreaData(env);
+            const state: any = await env.WEATHER_DATA_STORE.get('sync_state', { type: 'json' }) || { items: [], total: 0 };
+            let syncQueue: any[] = state.items || [];
+            const remaining = syncQueue.length;
             
-            for (const msg of messagesToSend) {
-                const xmlRes = await fetch(msg.link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
-                if (!xmlRes.ok) continue;
-                const xmlText = await xmlRes.text();
-                const xmlData = parser.parse(xmlText);
-                const report = xmlData.Report;
-                if (!report) continue;
-                const status = report.Control?.Status;
-                if (status !== '通常') continue;
-                const infoType = report.Head?.InfoType;
-                const reportDateTime = report.Head?.ReportDateTime;
-                
-                if (msg.telegramCode === 'VPWW') {
-                  this.processWarningToMemory(report, msg.id, reportDateTime, infoType, status, warningsData, areaData);
-                  warningsUpdated = true;
-                } else if (msg.telegramCode === 'VXSE') {
-                  this.processEarthquakeToMemory(report, msg.id, infoType, earthquakesData);
-                  earthquakesUpdated = true;
-                } else if (msg.telegramCode === 'VPTW') {
-                  this.processTyphoonToMemory(report, msg.id, msg.updated, typhoonsData);
-                  typhoonsUpdated = true;
-                }
+            if (remaining === 0) {
+              // Previous sync complete, start fresh
+              state.total = messagesToSend.length;
+              state.items = messagesToSend;
+            } else {
+              // 譁ｰ縺励＞繝・・繧ｿ繧貞━蜈医＠縺ｦ蜃ｦ逅・☆繧九◆繧√√く繝･繝ｼ縺ｮ蜈磯ｭ縺ｫ霑ｽ蜉(LIFO)
+              // 驥崎､・ｒ謗帝勁縺励※縺九ｉ霑ｽ蜉縺吶ｋ
+              const existingIds = new Set(syncQueue.map(i => i.id));
+              const uniqueMessages = messagesToSend.filter(m => !existingIds.has(m.id));
+              state.total = (state.total || 0) + uniqueMessages.length;
+              state.items = [...uniqueMessages, ...syncQueue];
             }
-            
-            if (warningsUpdated) {
-                const twoDaysAgo = Date.now() - 48 * 60 * 60 * 1000;
-                warningsData = warningsData.filter((w: any) => !(w.isCancelled && new Date(w.reportDateTime).getTime() < twoDaysAgo));
-                await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
-            }
-            if (earthquakesUpdated) {
-                await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
-            }
-            if (typhoonsUpdated) {
-                await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
-            }
+            await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify(state));
           } catch(e) {
-            console.error('Failed to process direct XMLs', e);
+            console.error('Failed to update sync_state in KV', e);
           }
         }
 
@@ -644,7 +481,7 @@ export default {
     }
 
     if (processedFeedsSet.size > processedFeeds.length) {
-      // 履歴は最新の1000件のみ保持する
+      // 螻･豁ｴ縺ｯ譛譁ｰ縺ｮ1000莉ｶ縺ｮ縺ｿ菫晄戟縺吶ｋ
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
       await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
     }
@@ -660,8 +497,8 @@ export default {
     }
   },
 
-  processWarningToMemory(report: any, xmlId: string, reportDateTime: string, infoType: string, status: string, warningsData: any[], areaData: any) {
-    if (infoType === '取消') return;
+  processWarningToMemory(report: any, xmlId: string, reportDateTime: string, infoType: string, status: string, warningsData: any[]) {
+    if (infoType === '蜿匁ｶ・) return;
 
     const warnings = Array.isArray(report.Body?.Warning) ? report.Body.Warning : (report.Body?.Warning ? [report.Body.Warning] : []);
     if (warnings.length === 0) return;
@@ -672,21 +509,20 @@ export default {
       prefecture = OFFICE_CODE_TO_PREF[idMatch[1]] || '';
     }
     
-    // 取得できなかった場合、または「北海道」と大まかに判定された場合はTitleから詳細な地域名を取得
-    if (!prefecture || prefecture === '北海道') {
+    // 蜿門ｾ励〒縺阪↑縺九▲縺溷ｴ蜷医√∪縺溘・縲悟圏豬ｷ驕薙阪→螟ｧ縺ｾ縺九↓蛻､螳壹＆繧後◆蝣ｴ蜷医・Title縺九ｉ隧ｳ邏ｰ縺ｪ蝨ｰ蝓溷錐繧貞叙蠕・    if (!prefecture || prefecture === '蛹玲ｵｷ驕・) {
       const title = report.Head?.Title || '';
-      const titleWithoutParen = title.replace(/（[^）]+）/, '');
-      const prefMatch = titleWithoutParen.match(/^(.+地方|.+県|.+府|北海道|東京都)/);
+      const titleWithoutParen = title.replace(/・・^・云+・・, '');
+      const prefMatch = titleWithoutParen.match(/^(.+蝨ｰ譁ｹ|.+逵芸.+蠎忿蛹玲ｵｷ驕倒譚ｱ莠ｬ驛ｽ)/);
       if (prefMatch) {
         prefecture = prefMatch[1];
       }
 
-      if (prefecture.includes('沖縄') || prefecture.includes('大東島') || prefecture.includes('宮古島') || prefecture.includes('八重山')) {
-        prefecture = '沖縄県';
-      } else if (prefecture.includes('奄美') || prefecture.includes('鹿児島')) {
-        prefecture = '鹿児島県';
-      } else if (prefecture === '東京地方') {
-        prefecture = '東京都';
+      if (prefecture.includes('豐也ｸ・) || prefecture.includes('螟ｧ譚ｱ蟲ｶ') || prefecture.includes('螳ｮ蜿､蟲ｶ') || prefecture.includes('蜈ｫ驥榊ｱｱ')) {
+        prefecture = '豐也ｸ・恁';
+      } else if (prefecture.includes('螂・ｾ・) || prefecture.includes('鮖ｿ蜈仙ｳｶ')) {
+        prefecture = '鮖ｿ蜈仙ｳｶ逵・;
+      } else if (prefecture === '譚ｱ莠ｬ蝨ｰ譁ｹ') {
+        prefecture = '譚ｱ莠ｬ驛ｽ';
       }
     }
 
@@ -695,10 +531,10 @@ export default {
       
       const wType = warning['@_type'] || '';
       let areaType = 'unknown';
-      if (wType.includes('府県予報区')) areaType = 'prefecture';
-      else if (wType.includes('細分区域')) areaType = 'region';
-      else if (wType.includes('まとめた地域')) areaType = 'subregion';
-      else if (wType.includes('市町村等')) areaType = 'municipality';
+      if (wType.includes('蠎懃恁莠亥ｱ蛹ｺ')) areaType = 'prefecture';
+      else if (wType.includes('邏ｰ蛻・玄蝓・)) areaType = 'region';
+      else if (wType.includes('縺ｾ縺ｨ繧√◆蝨ｰ蝓・)) areaType = 'subregion';
+      else if (wType.includes('蟶ら伴譚醍ｭ・)) areaType = 'municipality';
 
       const items = Array.isArray(warning.Item) ? warning.Item : (warning.Item ? [warning.Item] : []);
 
@@ -716,16 +552,6 @@ export default {
         for (const area of areas) {
           if (!area) continue;
           const region = area.Name;
-          let class10 = '';
-          let class15 = '';
-          let finalPref = prefecture;
-          let finalMuni = region;
-          if (area.Code && areaData) {
-              const h = getHierarchyNames(String(area.Code), areaData);
-              if (h.pref) finalPref = h.pref;
-              if (h.class10) class10 = h.class10;
-              if (h.class15) class15 = h.class15;
-          }
         
           const kinds = Array.isArray(item.Kind) ? item.Kind : (item.Kind ? [item.Kind] : []);
           
@@ -738,73 +564,74 @@ export default {
             let wName = kindName;
             let level = 'advisory';
             
-            // 既存のレベル表記を一旦削除して正規化
-            wName = wName.replace(/^レベル[１-５1-5]\s*/, '');
+            // 譌｢蟄倥・繝ｬ繝吶Ν陦ｨ險倥ｒ荳譌ｦ蜑企勁縺励※豁｣隕丞喧
+            wName = wName.replace(/^繝ｬ繝吶Ν[・・・・-5]\s*/, '');
             
-            // レベル5
-            if (wName.includes('特別警報') || wName.includes('氾濫発生')) {
+            // 繝ｬ繝吶Ν5
+            if (wName.includes('迚ｹ蛻･隴ｦ蝣ｱ') || wName.includes('豌ｾ豼ｫ逋ｺ逕・)) {
               level = 'special';
             } 
-            // レベル4
-            else if (wName.includes('土砂災害警戒情報') || (wName.includes('高潮') && wName.includes('警報')) || wName.includes('氾濫危険')) {
+            // 繝ｬ繝吶Ν4
+            else if (wName.includes('蝨溽ら⊃螳ｳ隴ｦ謌呈ュ蝣ｱ') || (wName.includes('鬮俶ｽｮ') && wName.includes('隴ｦ蝣ｱ')) || wName.includes('豌ｾ豼ｫ蜊ｱ髯ｺ')) {
               level = 'warning_l4';
             }
-            // レベル3
-            else if (wName.includes('警報') || wName.includes('氾濫警戒')) {
+            // 繝ｬ繝吶Ν3
+            else if (wName.includes('隴ｦ蝣ｱ') || wName.includes('豌ｾ豼ｫ隴ｦ謌・)) {
               level = 'warning';
             }
-            // レベル2
+            // 繝ｬ繝吶Ν2
             else {
               level = 'advisory';
             }
 
-            // 大雨、洪水（氾濫）、高潮、土砂災害のみレベルを付与する
-            if (wName.includes('大雨') || wName.includes('洪水') || wName.includes('氾濫') || wName.includes('高潮') || wName.includes('土砂災害')) {
+            // 螟ｧ髮ｨ縲∵ｴｪ豌ｴ・域ｰｾ豼ｫ・峨・ｫ俶ｽｮ縲∝悄遐ら⊃螳ｳ縺ｮ縺ｿ繝ｬ繝吶Ν繧剃ｻ倅ｸ弱☆繧・            if (wName.includes('螟ｧ髮ｨ') || wName.includes('豢ｪ豌ｴ') || wName.includes('豌ｾ豼ｫ') || wName.includes('鬮俶ｽｮ') || wName.includes('蝨溽ら⊃螳ｳ')) {
               if (level === 'special') {
-                wName = `レベル5 ${wName}`;
+                wName = `繝ｬ繝吶Ν5 ${wName}`;
                 level = 'level_5';
               } else if (level === 'warning_l4') {
-                wName = `レベル4 ${wName}`;
+                wName = `繝ｬ繝吶Ν4 ${wName}`;
                 level = 'level_4';
               } else if (level === 'warning') {
-                wName = `レベル3 ${wName}`;
+                wName = `繝ｬ繝吶Ν3 ${wName}`;
                 level = 'level_3';
               } else {
-                wName = `レベル2 ${wName}`;
+                wName = `繝ｬ繝吶Ν2 ${wName}`;
                 level = 'level_2';
               }
             } else {
-              // それ以外（強風、波浪など）はレベル文字列を付けず、元のlevelのまま
+              // 縺昴ｌ莉･螟厄ｼ亥ｼｷ鬚ｨ縲∵ｳ｢豬ｪ縺ｪ縺ｩ・峨・繝ｬ繝吶Ν譁・ｭ怜・繧剃ｻ倥￠縺壹∝・縺ｮlevel縺ｮ縺ｾ縺ｾ
               if (level === 'special') level = 'special';
               else if (level === 'warning_l4' || level === 'warning') level = 'warning';
               else level = 'advisory';
             }
 
-            // 1. 「解除」の場合：配列から直接削除せず、isCancelledフラグを立てて論理削除とする
-            // これにより「新しい解除」が先に処理され、後から「古い発表」が来ても時系列比較で弾ける
-            if (kindName.includes('解除') || kindName === 'なし' || kind.Status === '解除') {
+            // 1. 縲瑚ｧ｣髯､縲阪・蝣ｴ蜷茨ｼ夐・蛻励°繧臥峩謗･蜑企勁縺帙★縲（sCancelled繝輔Λ繧ｰ繧堤ｫ九※縺ｦ隲也炊蜑企勁縺ｨ縺吶ｋ
+            // 縺薙ｌ縺ｫ繧医ｊ縲梧眠縺励＞隗｣髯､縲阪′蜈医↓蜃ｦ逅・＆繧後∝ｾ後°繧峨悟商縺・匱陦ｨ縲阪′譚･縺ｦ繧よ凾邉ｻ蛻玲ｯ碑ｼ・〒蠑ｾ縺代ｋ
+            if (kindName.includes('隗｣髯､') || kindName === '縺ｪ縺・ || kind.Status === '隗｣髯､') {
               let found = false;
               for (let i = warningsData.length - 1; i >= 0; i--) {
                 if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
                   found = true;
                   const existingDate = new Date(warningsData[i].reportDateTime).getTime();
                   const newDate = new Date(reportDateTime).getTime();
-                  // 既存のデータより新しい解除情報の場合のみ更新
+                  // 譌｢蟄倥・繝・・繧ｿ繧医ｊ譁ｰ縺励＞隗｣髯､諠・ｱ縺ｮ蝣ｴ蜷医・縺ｿ譖ｴ譁ｰ
                   if (newDate >= existingDate) {
                     warningsData[i].isCancelled = true;
                     warningsData[i].reportDateTime = reportDateTime;
                   }
                 }
               }
-              // まだDBにないが、未来の解除情報が先に来た場合はダミーとして登録しておく
+              // 縺ｾ縺DB縺ｫ縺ｪ縺・′縲∵悴譚･縺ｮ隗｣髯､諠・ｱ縺悟・縺ｫ譚･縺溷ｴ蜷医・繝繝溘・縺ｨ縺励※逋ｻ骭ｲ縺励※縺翫￥
               if (!found) {
-                warningsData.push({ xmlId, region: finalMuni, reportDateTime, infoType, warningName: wName, level, areaType, prefecture: finalPref, class10, class15, status, isCancelled: true });
+                warningsData.push({
+                  xmlId, region, reportDateTime, infoType, warningName: wName, level, areaType, prefecture, status, isCancelled: true
+                });
               }
               continue;
             }
 
-          // 2. 「発表」またはそれ以外の場合：DB(配列)に追加
-          // 同じ警報が既にある場合は重複を防ぐため削除してから追加する
+          // 2. 縲檎匱陦ｨ縲阪∪縺溘・縺昴ｌ莉･螟悶・蝣ｴ蜷茨ｼ咼B(驟榊・)縺ｫ霑ｽ蜉
+          // 蜷後§隴ｦ蝣ｱ縺梧里縺ｫ縺ゅｋ蝣ｴ蜷医・驥崎､・ｒ髦ｲ縺舌◆繧∝炎髯､縺励※縺九ｉ霑ｽ蜉縺吶ｋ
           let existingIndex = -1;
           for (let i = warningsData.length - 1; i >= 0; i--) {
             if (warningsData[i].region === region && warningsData[i].areaType === areaType && warningsData[i].warningName === wName) {
@@ -818,10 +645,9 @@ export default {
             const newDate = new Date(reportDateTime).getTime();
             
             if (newDate < existingDate) {
-               continue; // 新しいデータ（または解除）がすでにあるなら、古いデータでの上書きを防ぐ
-            }
+               continue; // 譁ｰ縺励＞繝・・繧ｿ・医∪縺溘・隗｣髯､・峨′縺吶〒縺ｫ縺ゅｋ縺ｪ繧峨∝商縺・ョ繝ｼ繧ｿ縺ｧ縺ｮ荳頑嶌縺阪ｒ髦ｲ縺・            }
             
-            // 既存データを更新 (解除フラグを落とす)
+            // 譌｢蟄倥ョ繝ｼ繧ｿ繧呈峩譁ｰ (隗｣髯､繝輔Λ繧ｰ繧定誠縺ｨ縺・
             warningsData[existingIndex] = { ...warningsData[existingIndex], xmlId, reportDateTime, warningCode: kindCode || '', warningLevel: level, infoType, status, isCancelled: false };
           } else {
             warningsData.push({
@@ -854,9 +680,8 @@ export default {
           magnitude: magnitude || '', maxIntensity: maxInt || '', depth: 0
         });
         
-        // 直近200件に制限
-        if (earthquakesData.length > 200) {
-          earthquakesData.shift(); // 古いものを削除
+        // 逶ｴ霑・00莉ｶ縺ｫ蛻ｶ髯・        if (earthquakesData.length > 200) {
+          earthquakesData.shift(); // 蜿､縺・ｂ縺ｮ繧貞炎髯､
         }
       }
     }
@@ -903,7 +728,7 @@ export default {
         dateTimeStr = dateTimeObj || '';
       }
       
-      const isCurrent = forecastType === '実況' || forecastType.includes('推定');
+      const isCurrent = forecastType === '螳滓ｳ・ || forecastType.includes('謗ｨ螳・);
 
       const items = info.Item ? (Array.isArray(info.Item) ? info.Item : [info.Item]) : [];
       
@@ -937,7 +762,7 @@ export default {
             const tcText = typeof tc === 'object' ? tc['#text'] : tc;
             const icText = typeof ic === 'object' ? ic['#text'] : ic;
             const acText = typeof ac === 'object' ? ac['#text'] : ac;
-            if (forecastType === '実況') {
+            if (forecastType === '螳滓ｳ・) {
               typhoonClass = tcText || typhoonClass;
               intensityClass = icText || intensityClass;
               areaClass = acText || areaClass;
@@ -951,13 +776,12 @@ export default {
             const coords = cp.Coordinate ? (Array.isArray(cp.Coordinate) ? cp.Coordinate : [cp.Coordinate]) : [];
             let parsedLat: number | null = null;
             let parsedLon: number | null = null;
-            let precision = 0; // 0: none, 1: 度, 2: 度分
-
+            let precision = 0; // 0: none, 1: 蠎ｦ, 2: 蠎ｦ蛻・
             for (const c of coords) {
               const ct = typeof c === 'object' ? (c['@_type'] || '') : '';
               const cv = typeof c === 'object' ? (c['#text'] || '') : String(c);
               
-              if (ct.includes('度分') && precision < 2) {
+              if (ct.includes('蠎ｦ蛻・) && precision < 2) {
                 const m = String(cv).match(/([+-]\d+)(\d{2})([+-]\d+)(\d{2})/);
                 if (m) {
                   const isLatNeg = m[1].startsWith('-');
@@ -966,7 +790,7 @@ export default {
                   parsedLon = (Math.abs(parseInt(m[3], 10)) + parseInt(m[4], 10) / 60) * (isLonNeg ? -1 : 1);
                   precision = 2;
                 }
-              } else if (ct.includes('度）') && precision < 1) {
+              } else if (ct.includes('蠎ｦ・・) && precision < 1) {
                 const m = String(cv).match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
                 if (m) {
                   parsedLat = parseFloat(m[1]);
@@ -1005,13 +829,12 @@ export default {
               if (isCurrent) pressure = cp.Pressure['#text'] || 0;
               fPressure = cp.Pressure['#text'] || 0;
             }
-            // 予報円
-            if (cp.ProbabilityCircle) {
+            // 莠亥ｱ蜀・            if (cp.ProbabilityCircle) {
               const pc = cp.ProbabilityCircle;
               const bps = pc.BasePoint ? (Array.isArray(pc.BasePoint) ? pc.BasePoint : [pc.BasePoint]) : [];
               for (const bp of bps) {
                 const bpType = bp['@_type'] || '';
-                if (bpType.includes('度）') && !bpType.includes('度分')) {
+                if (bpType.includes('蠎ｦ・・) && !bpType.includes('蠎ｦ蛻・)) {
                   const m = String(bp['#text'] || '').match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
                   if (m) { fLat = parseFloat(m[1]); fLon = parseFloat(m[2]); }
                 }
@@ -1021,7 +844,7 @@ export default {
                 for (const ax of axes) {
                   const radii = ax.Radius ? (Array.isArray(ax.Radius) ? ax.Radius : [ax.Radius]) : [];
                   for (const r of radii) {
-                    if (r['@_unit'] === 'km' && String(r['@_type']).includes('確率半径')) {
+                    if (r['@_unit'] === 'km' && String(r['@_type']).includes('遒ｺ邇・濠蠕・)) {
                       fCircleRadiusKm = r['#text'] || 0;
                     }
                   }
@@ -1041,11 +864,11 @@ export default {
               for (const w of wsArr) {
                 if (w['@_unit'] === 'm/s') {
                   const wType = w['@_type'] || '';
-                  if (wType.includes('最大風速')) {
+                  if (wType.includes('譛螟ｧ鬚ｨ騾・)) {
                     if (isCurrent) maxWind = w['#text'] || 0;
                     fMaxWind = w['#text'] || 0;
                   }
-                  if (wType.includes('最大瞬間風速')) {
+                  if (wType.includes('譛螟ｧ迸ｬ髢馴｢ｨ騾・)) {
                     if (isCurrent) gustWind = w['#text'] || 0;
                     fGustWind = w['#text'] || 0;
                   }
@@ -1080,7 +903,7 @@ export default {
                         for (const bp of bps) {
                           const ct = typeof bp === 'object' ? (bp['@_type'] || '') : '';
                           const cv = typeof bp === 'object' ? (bp['#text'] || '') : String(bp);
-                          if (ct.includes('度分') && precision < 2) {
+                          if (ct.includes('蠎ｦ蛻・) && precision < 2) {
                             const m = String(cv).match(/([+-]\d+)(\d{2})([+-]\d+)(\d{2})/);
                             if (m) {
                               const isLatNeg = m[1].startsWith('-');
@@ -1089,7 +912,7 @@ export default {
                               bpLon = (Math.abs(parseInt(m[3], 10)) + parseInt(m[4], 10) / 60) * (isLonNeg ? -1 : 1);
                               precision = 2;
                             }
-                          } else if (ct.includes('度）') && precision < 1) {
+                          } else if (ct.includes('蠎ｦ・・) && precision < 1) {
                             const m = String(cv).match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
                             if (m) {
                               bpLat = parseFloat(m[1]);
@@ -1101,10 +924,10 @@ export default {
                       }
 
                       if (radiiData.length > 0) {
-                        if (wapType.includes('暴風')) {
+                        if (wapType.includes('證ｴ鬚ｨ')) {
                           if (isCurrent) { stormRadii = radiiData; stormCenterLat = bpLat; stormCenterLon = bpLon; }
                           else { fStormRadii = radiiData; fStormCenterLat = bpLat; fStormCenterLon = bpLon; }
-                        } else if (wapType.includes('強風')) {
+                        } else if (wapType.includes('蠑ｷ鬚ｨ')) {
                           if (isCurrent) { galeRadii = radiiData; galeCenterLat = bpLat; galeCenterLon = bpLon; }
                           else { fGaleRadii = radiiData; fGaleCenterLat = bpLat; fGaleCenterLon = bpLon; }
                         }
@@ -1117,8 +940,7 @@ export default {
           }
         }
         
-        // 暴風域・強風域の抽出（Areaから）
-        if (item.Area) {
+        // 證ｴ鬚ｨ蝓溘・蠑ｷ鬚ｨ蝓溘・謚ｽ蜃ｺ・・rea縺九ｉ・・        if (item.Area) {
           const areas = Array.isArray(item.Area) ? item.Area : [item.Area];
           for (const area of areas) {
             if (area.Circle) {
@@ -1138,16 +960,15 @@ export default {
                   }
                   if (radiiData.length > 0) {
                     if (isCurrent) {
-                      // 暴風域は種別を名前から判定
-                      const areaName = area.Name || '';
-                      if (areaName.includes('暴風') && !areaName.includes('警戒')) {
+                      // 證ｴ鬚ｨ蝓溘・遞ｮ蛻･繧貞錐蜑阪°繧牙愛螳・                      const areaName = area.Name || '';
+                      if (areaName.includes('證ｴ鬚ｨ') && !areaName.includes('隴ｦ謌・)) {
                         stormRadii = radiiData;
                       } else {
                         galeRadii = radiiData;
                       }
                     } else {
                       const areaName = area.Name || '';
-                      if (areaName.includes('暴風') && !areaName.includes('警戒')) {
+                      if (areaName.includes('證ｴ鬚ｨ') && !areaName.includes('隴ｦ謌・)) {
                         fStormRadii = radiiData;
                       } else {
                         fGaleRadii = radiiData;
@@ -1160,8 +981,7 @@ export default {
           }
         }
         
-        // 予報情報を保存
-        if (forecastType && !isCurrent && (fLat || fLon)) {
+        // 莠亥ｱ諠・ｱ繧剃ｿ晏ｭ・        if (forecastType && !isCurrent && (fLat || fLon)) {
           forecasts.push({
             type: forecastType,
             dateTime: dateTimeStr,
@@ -1183,7 +1003,7 @@ export default {
     }
 
     if (tcNumber) {
-      if (!name) name = '熱帯低気圧';
+      if (!name) name = '辭ｱ蟶ｯ菴取ｰ怜悸';
       
       for (let i = typhoonsData.length - 1; i >= 0; i--) {
         if (typhoonsData[i].tcNumber === tcNumber) {
@@ -1257,7 +1077,7 @@ export default {
                   const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
                   
                   for (const w of area.warnings) {
-                      if (w.status === '発表' || w.status === '継続') {
+                      if (w.status === '逋ｺ陦ｨ' || w.status === '邯咏ｶ・) {
                           const warningCode = w.code;
                           const wInfo = WARNING_CODES[warningCode];
                           if (wInfo) {
@@ -1270,7 +1090,7 @@ export default {
                                   warningCode: warningCode,
                                   warningName: wInfo.name,
                                   warningLevel: wInfo.level,
-                                  infoType: '発表',
+                                  infoType: '逋ｺ陦ｨ',
                                   status: w.status,
                                   isCancelled: false
                               });
@@ -1306,8 +1126,7 @@ export default {
       console.error("Failed to fetch initial earthquakes", e);
     }
     
-    // 警報はmap.jsonから完全構築するため一旦実行する
-    await this.syncMapJsonState(env);
+    // 隴ｦ蝣ｱ縺ｯmap.json縺九ｉ螳悟・讒狗ｯ峨☆繧九◆繧∽ｸ譌ｦ螳溯｡後☆繧・    await this.syncMapJsonState(env);
     
     await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
     await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify([]));
@@ -1315,8 +1134,8 @@ export default {
     await env.WEATHER_DATA_STORE.put('sync_state', JSON.stringify({ items: [], total: 0 }));
     await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
 
-    // XMLフィードから地震と台風の最新状態を構築 (isInitialSync = true)
+    // XML繝輔ぅ繝ｼ繝峨°繧牙慍髴・→蜿ｰ鬚ｨ縺ｮ譛譁ｰ迥ｶ諷九ｒ讒狗ｯ・(isInitialSync = true)
     await this.updateJmaData(env, true);
-    await invalidateApiCaches();
+
   }
 };

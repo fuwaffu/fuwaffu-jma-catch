@@ -73,74 +73,6 @@ const parser = new XMLParser({
 // Cache TTL: 10分
 const CACHE_TTL_SECONDS = 60;
 
-let cachedAreaData: any = null;
-async function getAreaData(env: Env) {
-  if (cachedAreaData) return cachedAreaData;
-  try {
-    const res = await fetch('https://www.jma.go.jp/bosai/common/const/area.json');
-    if (res.ok) {
-      cachedAreaData = await res.json();
-      return cachedAreaData;
-    }
-  } catch(e) {}
-  return null;
-}
-
-const areaCodeToName = (code: string, areaData: any) => {
-    if (!areaData) return code;
-    if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-    if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-    if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-    if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-    if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-    return code;
-};
-
-const getHierarchyNames = (code: string, areaData: any) => {
-    let pref = '';
-    let class10 = '';
-    let class15 = '';
-    let muni = code;
-    if (areaData) muni = areaCodeToName(code, areaData);
-    
-    if (areaData) {
-        if (areaData.class20s && areaData.class20s[code]) {
-            const parent = areaData.class20s[code].parent;
-            if (areaData.class15s && areaData.class15s[parent]) {
-                class15 = areaData.class15s[parent].name;
-                const c10 = areaData.class15s[parent].parent;
-                if (areaData.class10s && areaData.class10s[c10]) {
-                    class10 = areaData.class10s[c10].name;
-                    const off = areaData.class10s[c10].parent;
-                    if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-                }
-            } else if (areaData.class10s && areaData.class10s[parent]) {
-                class10 = areaData.class10s[parent].name;
-                const off = areaData.class10s[parent].parent;
-                if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-            }
-        } else if (areaData.class15s && areaData.class15s[code]) {
-            class15 = areaData.class15s[code].name;
-            const c10 = areaData.class15s[code].parent;
-            if (areaData.class10s && areaData.class10s[c10]) {
-                class10 = areaData.class10s[c10].name;
-                const off = areaData.class10s[c10].parent;
-                if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-            }
-        } else if (areaData.class10s && areaData.class10s[code]) {
-            class10 = areaData.class10s[code].name;
-            const off = areaData.class10s[code].parent;
-            if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-        } else if (areaData.offices && areaData.offices[code]) {
-            pref = areaData.offices[code].name;
-        }
-    }
-    
-    pref = normalizePrefectureName(pref || OFFICE_CODE_TO_PREF[code] || '');
-    return { pref, class10, class15, muni };
-};
-
-
 async function cachedKvQuery(
   cacheKey: string,
   env: Env,
@@ -368,7 +300,6 @@ export default {
     
     // 必要なデータストアを先にロード（スマートGET）
     let warningsData: any[] | null = null;
-    const areaData = await getAreaData(env);
     let earthquakesData: any[] | null = null;
     let typhoonsData: any[] | null = null;
     let warningsUpdated = false;
@@ -421,7 +352,7 @@ export default {
           // データストアの遅延ロード（初回のみKVからGET）
           if (telegramCode === 'VPWW') {
             if (warningsData === null) warningsData = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData, areaData);
+            this.processWarningToMemory(report, id, reportDateTime, infoType, status, warningsData);
             warningsUpdated = true;
           } else if (telegramCode === 'VXSE') {
             if (earthquakesData === null) earthquakesData = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
@@ -593,10 +524,9 @@ export default {
 
         if (messagesToSend.length > 0) {
           try {
-            let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-            let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
-            let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
-            const areaData = await getAreaData(env);
+            let warningsData = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+            let earthquakesData = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
+            let typhoonsData = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
             
             for (const msg of messagesToSend) {
                 const xmlRes = await fetch(msg.link, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
@@ -611,7 +541,7 @@ export default {
                 const reportDateTime = report.Head?.ReportDateTime;
                 
                 if (msg.telegramCode === 'VPWW') {
-                  this.processWarningToMemory(report, msg.id, reportDateTime, infoType, status, warningsData, areaData);
+                  this.processWarningToMemory(report, msg.id, reportDateTime, infoType, status, warningsData);
                   warningsUpdated = true;
                 } else if (msg.telegramCode === 'VXSE') {
                   this.processEarthquakeToMemory(report, msg.id, infoType, earthquakesData);
@@ -660,7 +590,7 @@ export default {
     }
   },
 
-  processWarningToMemory(report: any, xmlId: string, reportDateTime: string, infoType: string, status: string, warningsData: any[], areaData: any) {
+  processWarningToMemory(report: any, xmlId: string, reportDateTime: string, infoType: string, status: string, warningsData: any[]) {
     if (infoType === '取消') return;
 
     const warnings = Array.isArray(report.Body?.Warning) ? report.Body.Warning : (report.Body?.Warning ? [report.Body.Warning] : []);
@@ -716,16 +646,6 @@ export default {
         for (const area of areas) {
           if (!area) continue;
           const region = area.Name;
-          let class10 = '';
-          let class15 = '';
-          let finalPref = prefecture;
-          let finalMuni = region;
-          if (area.Code && areaData) {
-              const h = getHierarchyNames(String(area.Code), areaData);
-              if (h.pref) finalPref = h.pref;
-              if (h.class10) class10 = h.class10;
-              if (h.class15) class15 = h.class15;
-          }
         
           const kinds = Array.isArray(item.Kind) ? item.Kind : (item.Kind ? [item.Kind] : []);
           
@@ -798,7 +718,9 @@ export default {
               }
               // まだDBにないが、未来の解除情報が先に来た場合はダミーとして登録しておく
               if (!found) {
-                warningsData.push({ xmlId, region: finalMuni, reportDateTime, infoType, warningName: wName, level, areaType, prefecture: finalPref, class10, class15, status, isCancelled: true });
+                warningsData.push({
+                  xmlId, region, reportDateTime, infoType, warningName: wName, level, areaType, prefecture, status, isCancelled: true
+                });
               }
               continue;
             }
