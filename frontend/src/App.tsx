@@ -14,8 +14,10 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
 
-  const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('region');
-  const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'class10' | 'class15' | 'municipality'>('class10');
+  const [selectedClass10, setSelectedClass10] = useState<string | null>(null);
+  const [selectedClass15, setSelectedClass15] = useState<string | null>(null);
+  
   const [use24HourFormat, setUse24HourFormat] = useState(true);
 
   const fetchData = async (bustCache = false) => {
@@ -120,61 +122,74 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, []);
 
-  // viewModeに合致するデータだけをフィルタリング
-  const filteredWarnings = warnings.filter((w: any) => {
-    if (w.isCancelled) return false;
-    
-    if (viewMode === 'municipality') {
-      if (selectedParentArea) {
-        return w.class10 === selectedParentArea || w.prefecture === selectedParentArea;
-      }
-      return false;
-    } else {
-      return true; // We fetch all municipalities and aggregate them in the render logic
-    }
-  });
+  
+  const activeWarnings = warnings.filter((w: any) => !w.isCancelled);
+  
+  const groupedWarningsMap = new Map();
+  for (const w of activeWarnings) {
+      if (viewMode === 'class15' && w.class10 !== selectedClass10) continue;
+      if (viewMode === 'municipality' && w.class15 !== selectedClass15 && selectedClass15 !== null) continue;
+      
+      let key = '';
+      if (viewMode === 'class10') key = w.class10;
+      else if (viewMode === 'class15') key = w.class15 || w.class10;
+      else if (viewMode === 'municipality') key = w.region;
+      
+      if (!key) continue;
 
-  // 最新の発表日時のデータのみを地域ごとにグループ化
-  const groupedWarnings = Object.values(filteredWarnings.reduce((acc: any, w: any) => {
-    const areaName = w.region || w.area;
-    if (!acc[areaName] || new Date(w.reportDateTime) > new Date(acc[areaName].reportDateTime)) {
-      acc[areaName] = { area: areaName, prefecture: w.prefecture, reportDateTime: w.reportDateTime, items: [w] };
-    } else if (w.reportDateTime === acc[areaName].reportDateTime) {
-      if (!acc[areaName].items.find((i: any) => i.warningName === w.warningName)) {
-        acc[areaName].items.push(w);
+      if (!groupedWarningsMap.has(key)) {
+          groupedWarningsMap.set(key, { 
+              area: key, 
+              prefecture: w.prefecture, 
+              reportDateTime: w.reportDateTime, 
+              items: [w] 
+          });
+      } else {
+          const existing = groupedWarningsMap.get(key);
+          if (new Date(w.reportDateTime) > new Date(existing.reportDateTime)) {
+              existing.reportDateTime = w.reportDateTime;
+          }
+          if (!existing.items.find((i: any) => i.warningName === w.warningName)) {
+              existing.items.push(w);
+          }
       }
-    }
-    return acc;
-  }, {})).sort((a: any, b: any) => new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime());
+  }
 
-  // 戻るボタンの処理（画面上）
+  const PREFECTURES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+
   const handleBack = () => {
-    if (selectedParentArea) {
-      setSelectedParentArea(null);
-      setViewMode('prefecture');
-      // ブラウザの履歴も更新する
-      if (window.history.state?.area) {
-        window.history.back();
+    if (viewMode === 'municipality') {
+      if (selectedClass15) {
+        setViewMode('class15');
+        setSelectedClass15(null);
+      } else {
+        setViewMode('class10');
+        setSelectedClass10(null);
       }
+      if (window.history.state?.mode) window.history.back();
+    } else if (viewMode === 'class15') {
+      setViewMode('class10');
+      setSelectedClass10(null);
+      if (window.history.state?.mode) window.history.back();
     }
   };
 
-  // 選択領域が変わったときにブラウザ履歴にpushする
   useEffect(() => {
-    if (selectedParentArea && window.history.state?.area !== selectedParentArea) {
-      window.history.pushState({ area: selectedParentArea }, '');
+    if (viewMode !== 'class10' && window.history.state?.mode !== viewMode) {
+      window.history.pushState({ mode: viewMode, class10: selectedClass10, class15: selectedClass15 }, '');
     }
-  }, [selectedParentArea]);
+  }, [viewMode, selectedClass10, selectedClass15]);
 
-  // ブラウザの戻るボタン（popstate）の検知
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
-      if (e.state && e.state.area) {
-        setSelectedParentArea(e.state.area);
-        setViewMode('municipality');
+      if (e.state && e.state.mode) {
+        setViewMode(e.state.mode);
+        setSelectedClass10(e.state.class10);
+        setSelectedClass15(e.state.class15);
       } else {
-        setSelectedParentArea(null);
-        setViewMode('prefecture');
+        setViewMode('class10');
+        setSelectedClass10(null);
+        setSelectedClass15(null);
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -265,16 +280,16 @@ export default function App() {
           <div>
             {activeTab === 'warnings' && (
               <div style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                {selectedParentArea ? (
+                {viewMode !== 'class10' ? (
                   <>
                     <button 
                       onClick={handleBack}
                       style={{ padding: '4px 12px', backgroundColor: '#475569', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
                     >
-                      ← {viewMode === 'municipality' ? '地方・区域に戻る' : '都道府県に戻る'}
+                      ← {viewMode === 'municipality' ? '二次細分区域に戻る' : '一次細分区域に戻る'}
                     </button>
                     <span style={{ fontSize: '0.875rem', color: '#475569', backgroundColor: '#e0e7ff', padding: '4px 10px', borderRadius: '4px', fontWeight: 600 }}>
-                      {selectedParentArea} の市町村
+                      {viewMode === 'municipality' ? selectedClass15 : selectedClass10} の気象警報・注意報
                     </span>
                   </>
                 ) : (
@@ -316,54 +331,15 @@ export default function App() {
                 </thead>
                 <tbody>
                   {activeTab === 'warnings' && (() => {
-                    const PREFECTURES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
-                    
-                    if (viewMode === 'municipality') {
-                      const items = Object.values(groupedWarnings).sort((a: any, b: any) => {
-                        return new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime();
-                      });
-                      
-                      return (
-                        <>
-                          {items.length === 0 && (
-                            <tr><td colSpan={3} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>現在発表されている警報・注意報はありません</td></tr>
-                          )}
-                          {items.map((row: any, i: number) => (
-                            <tr key={row.area + '-' + i} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                              >
-                                <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
-                                <td style={{ padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle' }}>{row.area}</td>
-                                <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {row.items
-                                      .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
-                                      .map((w: any, idx: number) => {
-                                        const displayName = formatWarningName(w.warningName);
-                                        return (
-                                          <span key={idx} style={{
-                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                                            whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                            ...getWarningColor(w.warningLevel)
-                                          }}>
-                                            {displayName}
-                                          </span>
-                                        );
-                                      })}
-                                  </div>
-                                </td>
-                            </tr>
-                          ))}
-                        </>
-                      );
-                    } else {
-                      // デフォルトビュー: 都道府県 > 一次細分区域
+                    const items = Object.values(Object.fromEntries(groupedWarningsMap)).sort((a: any, b: any) => {
+                      return new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime();
+                    });
+
+                    if (viewMode === 'class10') {
                       const prefGroups: Record<string, any[]> = {};
                       PREFECTURES.forEach(p => prefGroups[p] = []);
                       
-                      Object.values(groupedWarnings).forEach((row: any) => {
+                      items.forEach((row: any) => {
                         const pref = row.prefecture || 'その他';
                         if (!prefGroups[pref]) prefGroups[pref] = [];
                         prefGroups[pref].push(row);
@@ -404,8 +380,8 @@ export default function App() {
                                         textUnderlineOffset: '4px'
                                       }}
                                       onClick={() => {
-                                        setSelectedParentArea(row.area); // row.area is class10
-                                        setViewMode('municipality');
+                                        setSelectedClass10(row.area);
+                                        setViewMode('class15');
                                       }}
                                     >
                                       {row.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
@@ -434,6 +410,59 @@ export default function App() {
                               </React.Fragment>
                             );
                           })}
+                        </>
+                      );
+                    } else {
+                      return (
+                        <>
+                          {items.length === 0 && (
+                            <tr><td colSpan={3} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>現在発表されている警報・注意報はありません</td></tr>
+                          )}
+                          {items.map((row: any, i: number) => (
+                            <tr key={row.area + '-' + i} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
+                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                              >
+                                <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
+                                <td 
+                                  style={{
+                                    padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
+                                    cursor: viewMode === 'class15' ? 'pointer' : 'default',
+                                    textDecoration: viewMode === 'class15' ? 'underline' : 'none',
+                                    textDecorationColor: '#93c5fd',
+                                    textUnderlineOffset: '4px'
+                                  }}
+                                  onClick={() => {
+                                    if (viewMode === 'class15') {
+                                      setSelectedClass15(row.area);
+                                      setViewMode('municipality');
+                                    }
+                                  }}
+                                >
+                                  {row.area} 
+                                  {viewMode === 'class15' && <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>}
+                                </td>
+                                <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {row.items
+                                      .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
+                                      .map((w: any, idx: number) => {
+                                        const displayName = formatWarningName(w.warningName);
+                                        return (
+                                          <span key={idx} style={{
+                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                                            whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            ...getWarningColor(w.warningLevel)
+                                          }}>
+                                            {displayName}
+                                          </span>
+                                        );
+                                      })}
+                                  </div>
+                                </td>
+                            </tr>
+                          ))}
                         </>
                       );
                     }

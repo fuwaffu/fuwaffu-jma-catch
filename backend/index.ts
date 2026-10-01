@@ -101,11 +101,14 @@ const getHierarchyNames = (code: string, areaData: any) => {
     let class10 = '';
     let class15 = '';
     let muni = code;
-    if (areaData) muni = areaCodeToName(code, areaData);
+    let searchCode = code;
+    if (code.length === 6) searchCode = code + '0';
+
+    if (areaData) muni = areaCodeToName(searchCode, areaData);
     
     if (areaData) {
-        if (areaData.class20s && areaData.class20s[code]) {
-            const parent = areaData.class20s[code].parent;
+        if (areaData.class20s && areaData.class20s[searchCode]) {
+            const parent = areaData.class20s[searchCode].parent;
             if (areaData.class15s && areaData.class15s[parent]) {
                 class15 = areaData.class15s[parent].name;
                 const c10 = areaData.class15s[parent].parent;
@@ -119,20 +122,20 @@ const getHierarchyNames = (code: string, areaData: any) => {
                 const off = areaData.class10s[parent].parent;
                 if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
             }
-        } else if (areaData.class15s && areaData.class15s[code]) {
-            class15 = areaData.class15s[code].name;
-            const c10 = areaData.class15s[code].parent;
+        } else if (areaData.class15s && areaData.class15s[searchCode]) {
+            class15 = areaData.class15s[searchCode].name;
+            const c10 = areaData.class15s[searchCode].parent;
             if (areaData.class10s && areaData.class10s[c10]) {
                 class10 = areaData.class10s[c10].name;
                 const off = areaData.class10s[c10].parent;
                 if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
             }
-        } else if (areaData.class10s && areaData.class10s[code]) {
-            class10 = areaData.class10s[code].name;
-            const off = areaData.class10s[code].parent;
+        } else if (areaData.class10s && areaData.class10s[searchCode]) {
+            class10 = areaData.class10s[searchCode].name;
+            const off = areaData.class10s[searchCode].parent;
             if (areaData.offices && areaData.offices[off]) pref = areaData.offices[off].name;
-        } else if (areaData.offices && areaData.offices[code]) {
-            pref = areaData.offices[code].name;
+        } else if (areaData.offices && areaData.offices[searchCode]) {
+            pref = areaData.offices[searchCode].name;
         }
     }
     
@@ -203,74 +206,12 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
-      if (url.pathname === "/api/warnings") {
-          try {
-              const [mapRes, areaRes] = await Promise.all([
-                  fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
-                  fetch('https://www.jma.go.jp/bosai/common/const/area.json')
-              ]);
-              if (mapRes.ok && areaRes.ok) {
-                  const mapData = await mapRes.json() as any;
-                  const areaData = await areaRes.json() as any;
-                  
-                  const areaCodeToName = (code: string) => {
-                      if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-                      if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-                      if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-                      if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-                      if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-                      return code;
-                  };
-                  
-                  const getPrefecture = (code: string) => {
-                      if (areaData.class20s && areaData.class20s[code]) return normalizePrefectureName(areaData.class20s[code].parent);
-                      if (areaData.class15s && areaData.class15s[code]) return normalizePrefectureName(areaData.class15s[code].parent);
-                      if (areaData.class10s && areaData.class10s[code]) return normalizePrefectureName(areaData.class10s[code].parent);
-                      return '';
-                  }
-                  
-                  let warningsData: any[] = [];
-                  const reportDateTimeFallback = new Date().toISOString(); 
-                  for (const report of mapData) {
-                      if (!report.areaTypes) continue;
-                      const rDate = report.reportDatetime || reportDateTimeFallback;
-                      for (const areaTypeObj of report.areaTypes) {
-                          for (const area of areaTypeObj.areas) {
-                              const areaCode = area.code;
-                              const regionName = areaCodeToName(areaCode);
-                              const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
-                              for (const w of area.warnings) {
-                                  if (w.status === '発表' || w.status === '継続') {
-                                      const warningCode = w.code;
-                                      const wInfo = WARNING_CODES[warningCode];
-                                      if (wInfo) {
-                                          warningsData.push({
-                                              xmlId: `mapjson-${areaCode}-${warningCode}`,
-                                              reportDateTime: rDate,
-                                              region: regionName,
-                                              prefecture: prefecture,
-                                              areaType: 'class20s',
-                                              warningCode: warningCode,
-                                              warningName: wInfo.name,
-                                              warningLevel: wInfo.level,
-                                              infoType: '発表',
-                                              status: w.status,
-                                              isCancelled: false
-                                          });
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
-                  return new Response(JSON.stringify(warningsData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-              }
-          } catch (e: any) {
-              return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500, headers: corsHeaders });
-          }
-          // Fallback to KV if fetch fails (but KV is stale)
-          return await cachedKvQuery('warnings', env, corsHeaders);
+      if (url.pathname === "/api/debug-clear") {
+          await env.WEATHER_DATA_STORE.put('warnings', '[]');
+          await invalidateApiCaches();
+          return new Response('ok', { headers: corsHeaders });
       }
+      if (url.pathname === "/api/warnings") return await cachedKvQuery('warnings', env, corsHeaders);
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
       if (url.pathname === "/api/status") {
@@ -492,6 +433,7 @@ export default {
 
   async updateJmaData(env: Env, isInitialSync = false) {
     const feedUrls = [
+      'https://www.data.jma.go.jp/developer/xml/feed/regular.xml',
       'https://www.data.jma.go.jp/developer/xml/feed/extra.xml',
       'https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml'
     ];
@@ -546,10 +488,11 @@ export default {
             const earthquakes = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VXSE'));
             const warnings = candidateEntries.filter((e: any) => e.link?.['@_href'].match(/_(VPWW|VXWW|VXXX)/));
             
-            // 初期同期では、警報はmap.jsonで完璧に取得済みのため、XMLからの過去警報の取得はスキップする（解除漏れを防ぐため）
+            // 有料プラン移行により、XMLから警報も取得する
             candidateEntries = [
                 ...typhoons.slice(0, 2),
-                ...earthquakes.slice(0, 10)
+                ...earthquakes.slice(0, 10),
+                ...warnings.slice(0, 50)
             ].sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
         } else {
             candidateEntries = candidateEntries.slice(0, 150);
@@ -1216,76 +1159,7 @@ export default {
     }
   },
 
-  async syncMapJsonState(env: Env) {
-    try {
-      const [mapRes, areaRes] = await Promise.all([
-        fetch('https://www.jma.go.jp/bosai/warning/data/warning/map.json'),
-        fetch('https://www.jma.go.jp/bosai/common/const/area.json')
-      ]);
 
-      if (!mapRes.ok || !areaRes.ok) return;
-
-      const mapData = await mapRes.json() as any;
-      const areaData = await areaRes.json() as any;
-
-      const areaCodeToName = (code: string) => {
-          if (areaData.class20s && areaData.class20s[code]) return areaData.class20s[code].name;
-          if (areaData.class15s && areaData.class15s[code]) return areaData.class15s[code].name;
-          if (areaData.class10s && areaData.class10s[code]) return areaData.class10s[code].name;
-          if (areaData.offices && areaData.offices[code]) return areaData.offices[code].name;
-          if (areaData.centers && areaData.centers[code]) return areaData.centers[code].name;
-          return code;
-      };
-      
-      const getPrefecture = (code: string) => {
-          if (areaData.class20s && areaData.class20s[code]) return normalizePrefectureName(areaData.class20s[code].parent);
-          if (areaData.class15s && areaData.class15s[code]) return normalizePrefectureName(areaData.class15s[code].parent);
-          if (areaData.class10s && areaData.class10s[code]) return normalizePrefectureName(areaData.class10s[code].parent);
-          return '';
-      }
-
-      let warningsData: any[] = [];
-      const reportDateTimeFallback = new Date().toISOString(); 
-
-      for (const report of mapData) {
-          if (!report.areaTypes) continue;
-          const rDate = report.reportDatetime || reportDateTimeFallback;
-          for (const areaTypeObj of report.areaTypes) {
-              for (const area of areaTypeObj.areas) {
-                  const areaCode = area.code;
-                  const regionName = areaCodeToName(areaCode);
-                  const prefecture = getPrefecture(areaCode) || OFFICE_CODE_TO_PREF[areaCode] || '';
-                  
-                  for (const w of area.warnings) {
-                      if (w.status === '発表' || w.status === '継続') {
-                          const warningCode = w.code;
-                          const wInfo = WARNING_CODES[warningCode];
-                          if (wInfo) {
-                              warningsData.push({
-                                  xmlId: `mapjson-${areaCode}-${warningCode}`,
-                                  reportDateTime: rDate,
-                                  region: regionName,
-                                  prefecture: prefecture,
-                                  areaType: 'class20s',
-                                  warningCode: warningCode,
-                                  warningName: wInfo.name,
-                                  warningLevel: wInfo.level,
-                                  infoType: '発表',
-                                  status: w.status,
-                                  isCancelled: false
-                              });
-                          }
-                      }
-                  }
-              }
-          }
-      }
-
-      await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData));
-    } catch (e) {
-      console.error('Failed syncMapJsonState', e);
-    }
-  },
 
   async syncInitialJmaData(env: Env) {
     let earthquakesData: any[] = [];
@@ -1306,9 +1180,9 @@ export default {
       console.error("Failed to fetch initial earthquakes", e);
     }
     
-    // 警報はmap.jsonから完全構築するため一旦実行する
-    await this.syncMapJsonState(env);
     
+    // warnings will be fully built by updateJmaData XML parsing below
+    await env.WEATHER_DATA_STORE.put('warnings', JSON.stringify([]));
     await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
     await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify([]));
     await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify([]));
