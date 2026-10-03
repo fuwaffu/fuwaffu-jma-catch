@@ -582,7 +582,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       </div>
 
       {/* 地図 */}
-      <div ref={mapRef} style={{ width: '100%', height: '450px', backgroundColor: '#87cefa' }} />
+      <div ref={mapRef} style={{ width: '100%', height: '720px', backgroundColor: '#87cefa' }} />
 
       {/* 情報パネル */}
       <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
