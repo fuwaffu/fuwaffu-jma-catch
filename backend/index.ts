@@ -162,7 +162,6 @@ async function cachedKvQuery(
     return new Response(cached.body, { status: cached.status, headers: newHeaders });
   }
 
-  // KVからデータを取得
   let data: any = await env.WEATHER_DATA_STORE.get(cacheKey, { type: 'json' });
   if (data === null) {
     if (cacheKey === 'status') data = { lastUpdated: null };
@@ -170,6 +169,21 @@ async function cachedKvQuery(
   } else if (Array.isArray(data)) {
     // クライアントに返す前に論理削除(isCancelled)されたデータを除外
     data = data.filter((d: any) => !d.isCancelled);
+
+    // 温帯低気圧かつ72時間経過したものを除外
+    if (cacheKey === 'typhoons') {
+      const now = Date.now();
+      const SEVENTY_TWO_HOURS = 72 * 60 * 60 * 1000;
+      data = data.filter((t: any) => {
+        if (t.current && (t.current.typhoonClass === '温帯低気圧' || t.name === '温帯低気圧')) {
+          const updatedAt = new Date(t.updatedAt).getTime();
+          if (now - updatedAt >= SEVENTY_TWO_HOURS) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
   }
 
   const body = JSON.stringify(data);

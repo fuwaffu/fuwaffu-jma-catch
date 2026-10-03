@@ -573,15 +573,14 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         if (i === points.length - 2) rightPoints.push(toLatLng(p2, a2));
       }
       
-      rightPoints.reverse();
-      return [...leftPoints, ...rightPoints];
+      return [leftPoints, rightPoints];
     };
 
     // 白色の予報円（Cone of uncertainty）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.polyline(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
     // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
@@ -681,7 +680,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     
     const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
     if (stormPolygon.length > 0) {
-      L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
+      L.polyline(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
     }
 
 
@@ -689,12 +688,12 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
     if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: 'transparent', weight: 2 }).addTo(map);
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 2 }).addTo(map);
     }
 
     const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
     if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 1, dashArray: '5,5' }).addTo(map);
     }
 
     // 予報進路（点線）と予報円

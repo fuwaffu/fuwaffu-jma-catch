@@ -183,15 +183,26 @@ export default function ObsApp() {
         if (i === points.length - 2) rightPoints.push(toLatLng(p2, a2));
       }
       
-      rightPoints.reverse();
-      return [...leftPoints, ...rightPoints];
+      return [leftPoints, rightPoints];
     };
 
     // 白色の予報円（扇形外枠のみ）
-    const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
+    const forecastPoints: { lat: number, lon: number, r: number }[] = [];
+    if (forecasts.length > 0) {
+      forecastPoints.push({ lat, lon, r: 0 }); // start point
+      let lastTime = 0;
+      for (const f of forecasts) {
+        const time = new Date(f.dateTime).getTime();
+        if (lastTime > 0 && time - lastTime < 12 * 3600 * 1000) {
+          continue; 
+        }
+        forecastPoints.push({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 });
+        lastTime = time;
+      }
+    }
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+      L.polyline(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
 
     // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
@@ -304,27 +315,33 @@ export default function ObsApp() {
 
     const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
     const stormPointsRaw = [curStormRaw];
+    let lastTimeStorm = 0;
     for (const f of forecasts) {
       const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
-      stormPointsRaw.push(p);
       if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
+      
+      const time = new Date(f.dateTime).getTime();
+      if (lastTimeStorm > 0 && time - lastTimeStorm < 12 * 3600 * 1000) continue;
+      
+      stormPointsRaw.push(p);
+      lastTimeStorm = time;
     }
     
     const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
     if (stormPolygon.length > 0) {
-      L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
+      L.polyline(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
     }
 
     
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
     if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: 'transparent', weight: 2 }).addTo(map);
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 2 }).addTo(map);
     }
 
     const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
     if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 1, dashArray: '5,5' }).addTo(map);
     }
 
 
