@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import L from 'leaflet';
+import { drawTyphoon } from './utils/drawTyphoon';
 import 'leaflet/dist/leaflet.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://jma-dashboard-backend.fuwaffu.workers.dev';
@@ -109,7 +110,7 @@ export default function ObsApp() {
       });
 
       // Pre-rendered 4K map background (much lighter processing for OBS)
-    const bounds: L.LatLngBoundsExpression = [[-80, -180], [80, 180]];
+    const bounds: L.LatLngBoundsExpression = [[-80, -45], [80, 315]];
     const targetMap = mapInstanceRef.current;
     if (targetMap) {
       const bgLayer = L.imageOverlay('/map_bg.png', bounds);
@@ -132,256 +133,7 @@ export default function ObsApp() {
     const lon = cur.lon;
     if (!lat || !lon) return;
 
-    const forecasts = activeTyphoon.forecasts || [];
-    const trackPoints: [number, number][] = [[lat, lon]];
-
-    // 台風の目（現在位置）のマーカー
-    const typhoonIcon = L.divIcon({
-      html: '<div style="font-size:24px;text-align:center;line-height:1;color:#FF2800;font-weight:bold;text-shadow:1px 1px 0 #fff,-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff;">×</div>',
-      iconSize: [24, 24], iconAnchor: [12, 12], className: '',
-    });
-    L.marker([lat, lon], { icon: typhoonIcon }).addTo(map);
-
-    // 扇形（コーン）の外枠を計算するヘルパー
-    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
-      if (!points || points.length <= 1) return [];
-      
-      const segments: [number, number][][] = [];
-      
-      const getDistAndAngle = (p1: any, p2: any) => {
-        const dLat = (p2.lat - p1.lat) * 111;
-        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
-        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-        const angle = Math.atan2(dLat, dLon); 
-        return { dist, angle };
-      };
-
-      const toLatLng = (p: any, angle: number): [number, number] => {
-        return [
-          p.lat + (p.r * Math.sin(angle)) / 111,
-          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
-        ];
-      };
-
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        if (!p1 || !p2) continue;
-        const { dist, angle } = getDistAndAngle(p1, p2);
-        
-        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) continue;
-
-        const theta = Math.asin((p2.r - p1.r) / dist);
-        const a1 = angle + Math.PI / 2 + theta;
-        const a2 = angle - Math.PI / 2 - theta;
-
-        segments.push([toLatLng(p1, a1), toLatLng(p2, a1)]);
-        segments.push([toLatLng(p1, a2), toLatLng(p2, a2)]);
-      }
-      
-      return segments;
-    };
-
-    // 白色の予報円（扇形外枠のみ）
-    const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
-    const forecastPolygon = getOuterTangentPolygon(forecastPoints);
-    if (forecastPolygon.length > 0) {
-      L.polyline(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
-    }
-
-    // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
-    const getTrueCircleFromRadii = (eyeLat: number, eyeLon: number, radii: any[]) => {
-      if (!radii || radii.length === 0) return null;
-      
-      const all = radii.find(r => r.direction === '全域' || !r.direction);
-      if (all) {
-        return { lat: eyeLat, lon: eyeLon, radius: all.radiusKm };
-      }
-
-      const dirAngles: Record<string, number> = {
-        '北': 0, '北北東': 22.5, '北東': 45, '東北東': 67.5,
-        '東': 90, '東南東': 112.5, '南東': 135, '南南東': 157.5,
-        '南': 180, '南南西': 202.5, '南西': 225, '西南西': 247.5,
-        '西': 270, '西北西': 292.5, '北西': 315, '北北西': 337.5
-      };
-
-      let maxR = 0;
-      let minOppositeR = 0;
-      let maxDir = '';
-
-      for (const r of radii) {
-        if (r.radiusKm > maxR) {
-          maxR = r.radiusKm;
-          maxDir = (r.direction || '').replace('側', '');
-        }
-      }
-
-      const maxAngle = dirAngles[maxDir];
-      if (maxAngle !== undefined) {
-        const oppAngle = (maxAngle + 180) % 360;
-        let minDiff = 360;
-        let foundOpposite = false;
-        for (const r of radii) {
-           const dir = (r.direction || '').replace('側', '');
-           const angle = dirAngles[dir];
-           if (angle !== undefined) {
-              let diff = Math.abs(angle - oppAngle);
-              if (diff > 180) diff = 360 - diff;
-              if (diff < minDiff) {
-                 minDiff = diff;
-                 minOppositeR = r.radiusKm;
-                 foundOpposite = true;
-              }
-           }
-        }
-        
-        if (!foundOpposite || minOppositeR === 0) minOppositeR = maxR;
-
-        const trueRadius = (maxR + minOppositeR) / 2;
-        const offsetKm = (maxR - minOppositeR) / 2;
-        
-        const rad = maxAngle * Math.PI / 180;
-        const dLat = (offsetKm * Math.cos(rad)) / 111;
-        const dLon = (offsetKm * Math.sin(rad)) / (111 * Math.cos(eyeLat * Math.PI / 180));
-        
-        return { lat: eyeLat + dLat, lon: eyeLon + dLon, radius: trueRadius };
-      }
-      
-      return { lat: eyeLat, lon: eyeLon, radius: maxR };
-    };
-
-    // 日付フォーマット関数
-    const formatForecastTime = (isoStr: string): string => {
-      if (!isoStr) return '';
-      try {
-        const d = new Date(isoStr);
-        if (isNaN(d.getTime())) return isoStr;
-        const day = d.getDate();
-        const hour = d.getHours();
-        const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
-        const weekDay = weekDays[d.getDay()];
-        
-        if (use24HourFormat) {
-          return `${day}日(${weekDay}) ${hour}時`;
-        } else {
-          if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
-          if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
-          if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
-          return `${day}日(${weekDay}) 午後${hour - 12}時`;
-        }
-      } catch { return isoStr; }
-    };
-
-    // 現在位置の時刻ラベル
-    const curTimeLabel = formatForecastTime(cur.dateTime);
-    const maxCurRadius = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
-    const curLabelOffsetKm = maxCurRadius + 60;
-    const curRad = -135 * Math.PI / 180;
-    const curDLat = (curLabelOffsetKm / 111) * Math.cos(curRad);
-    const curDLon = (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
-    const curLabelLat = lat + curDLat;
-    const curLabelLon = lon + curDLon;
-
-    L.polyline([[lat, lon], [curLabelLat, curLabelLon]], {
-      color: '#FF2800', weight: 1.5, opacity: 0.8, dashArray: '2,2'
-    }).addTo(map);
-
-    const curLabelIcon = L.divIcon({
-      html: `<div style="color:#FF2800;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'Zen Kaku Gothic Paren', 'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${curTimeLabel}</div>`,
-      className: '',
-      iconSize: [0, 0]
-    });
-    L.marker([curLabelLat, curLabelLon], { icon: curLabelIcon }).addTo(map);
-
-    const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
-      const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
-      return c ? { lat: c.lat, lon: c.lon, r: c.radius } : { lat: fEyeLat, lon: fEyeLon, r: 0 };
-    };
-
-    const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
-    const stormPointsRaw = [curStormRaw];
-    for (const f of forecasts) {
-      const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
-      stormPointsRaw.push(p);
-      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
-    }
-    
-    const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
-    if (stormPolygon.length > 0) {
-      L.polyline(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1, dashArray: '5,5' }).addTo(map);
-    }
-
-    
-    // 現在の強風域と暴風域（台風の目からの真の円として描画）
-    const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
-    if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 3 }).addTo(map);
-    }
-
-    const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
-    if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 3 }).addTo(map);
-    }
-
-
-    // 予報円とマーカー
-    const fStormCircles: {lat: number, lon: number, radius: number}[] = [];
-    forecasts.forEach((fc: any, idx: number) => {
-      if (!fc.lat || !fc.lon) return;
-      trackPoints.push([fc.lat, fc.lon]);
-
-      if (fc.circleRadiusKm > 0) {
-        L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5'
-        }).addTo(map);
-      }
-
-      // 予報円の中心に白点を表示 (進路線より上にするため pane を指定)
-      L.circleMarker([fc.lat, fc.lon], {
-        radius: 4,
-        color: '#fff',
-        fillColor: '#fff',
-        fillOpacity: 1,
-        weight: 1,
-        pane: 'markerPane'
-      }).addTo(map);
-      
-      if (fc.circleRadiusKm > 0) {
-        L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5',
-        }).addTo(map);
-      }
-
-      const timeLabel = formatForecastTime(fc.dateTime);
-      const angle = (idx % 2 === 0) ? -45 : 135; 
-      const labelOffsetKm = (fc.circleRadiusKm || 50) + 160; 
-      const rad = angle * Math.PI / 180;
-      const dLat = (labelOffsetKm / 111) * Math.cos(rad);
-      const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
-      const labelLat = fc.lat + dLat;
-      const labelLon = fc.lon + dLon;
-
-      L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
-        color: '#e2e8f0', weight: 2, dashArray: '4,4'
-      }).addTo(map);
-
-      const labelIcon = L.divIcon({
-        html: `<div style="color:#1e293b;font-weight:700;font-size:16px;text-shadow:1px 1px 2px #fff,-1px -1px 2px #fff,1px -1px 2px #fff,-1px 1px 2px #fff;white-space:nowrap;font-family:'Zen Kaku Gothic Paren', 'LINE Seed JP',sans-serif;transform:translate(-50%,-50%);">${timeLabel}</div>`,
-        className: '',
-        iconSize: [0, 0]
-      });
-      L.marker([labelLat, labelLon], { icon: labelIcon, zIndexOffset: 1000 }).addTo(map);
-    });
-
-    // 現在地の黒点/赤点（curIcon）は非表示にするよう修正
-    // 軌跡
-    L.polyline(trackPoints, { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
-
-    // 予報の暴風域（進路予測よりもレイヤーを上にするため、後に描画）
-    fStormCircles.forEach(c => {
-      L.circle([c.lat, c.lon], { radius: c.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
-    });
-
+    const trackPoints = drawTyphoon(map, activeTyphoon, { isObs: true });
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
     
@@ -429,14 +181,7 @@ export default function ObsApp() {
       {/* 背景地図 */}
       <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1, backgroundColor: '#87cefa' }} />
       
-      {/* グラデーションオーバーレイ (情報が見やすいように) */}
-      <div style={{
-        position: 'absolute',
-        top: 0, left: 0, right: 0, bottom: 0,
-        background: 'linear-gradient(to right, rgba(15,23,42,0.85) 0%, rgba(15,23,42,0.4) 45%, transparent 100%)',
-        zIndex: 2,
-        pointerEvents: 'none'
-      }} />
+
 
       <button 
         onClick={() => setUse24HourFormat(!use24HourFormat)}
