@@ -513,6 +513,8 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const lat = cur.lat || 30;
     const lon = cur.lon || 135;
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
+      map.createPane('bgPane');
+      map.getPane('bgPane')!.style.zIndex = '200';
     mapInstanceRef.current = map;
 
     const targetMap = mapInstanceRef.current;
@@ -521,7 +523,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         .then(res => res.json())
         .then(data => {
           const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
-          const bgLayer = L.geoJSON(data, { style });
+          const bgLayer = L.geoJSON(data, { style, pane: 'bgPane' });
           (bgLayer as any).isBaseMap = true;
           bgLayer.eachLayer((l: any) => l.isBaseMap = true);
           bgLayer.addTo(targetMap);
@@ -541,7 +543,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
               shiftCoords(f.geometry.coordinates);
             }
           });
-          const bgLayerRight = L.geoJSON(shiftedData, { style });
+          const bgLayerRight = L.geoJSON(shiftedData, { style, pane: 'bgPane' });
           (bgLayerRight as any).isBaseMap = true;
           bgLayerRight.eachLayer((l: any) => l.isBaseMap = true);
           bgLayerRight.addTo(targetMap);

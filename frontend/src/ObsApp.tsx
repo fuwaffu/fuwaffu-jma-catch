@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import L from 'leaflet';
 import { drawTyphoon } from './utils/drawTyphoon';
 import 'leaflet/dist/leaflet.css';
@@ -115,7 +115,7 @@ export default function ObsApp() {
         .then(res => res.json())
         .then(data => {
           const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
-          const bgLayer = L.geoJSON(data, { style });
+          const bgLayer = L.geoJSON(data, { style, pane: 'bgPane' });
           (bgLayer as any).isBaseMap = true;
           bgLayer.eachLayer((l: any) => l.isBaseMap = true);
           bgLayer.addTo(targetMap);
@@ -135,7 +135,7 @@ export default function ObsApp() {
               shiftCoords(f.geometry.coordinates);
             }
           });
-          const bgLayerRight = L.geoJSON(shiftedData, { style });
+          const bgLayerRight = L.geoJSON(shiftedData, { style, pane: 'bgPane' });
           (bgLayerRight as any).isBaseMap = true;
           bgLayerRight.eachLayer((l: any) => l.isBaseMap = true);
           bgLayerRight.addTo(targetMap);
@@ -280,7 +280,8 @@ export default function ObsApp() {
             
           </div>
           <div style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '2px' }}>
-            {activeTyphoon.name}`n            {activeTyphoon.nameEn && <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px', fontWeight: 600, letterSpacing: 'normal' }}>({activeTyphoon.nameEn})</span>}
+            {activeTyphoon.name}
+            {activeTyphoon.nameEn && <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px', fontWeight: 600, letterSpacing: 'normal' }}>({activeTyphoon.nameEn})</span>}
           </div>
           <div style={{ marginTop: '20px', fontSize: '22px', color: '#94a3b8' }}>
             <span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900 }}>{dt.getDate()}</span>日
