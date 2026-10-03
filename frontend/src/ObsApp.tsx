@@ -324,6 +324,7 @@ export default function ObsApp() {
 
 
     // 予報円とマーカー
+    const fStormCircles: {lat: number, lon: number, radius: number}[] = [];
     forecasts.forEach((fc: any, idx: number) => {
       if (!fc.lat || !fc.lon) return;
       trackPoints.push([fc.lat, fc.lon]);
@@ -374,6 +375,11 @@ export default function ObsApp() {
     // 現在地の黒点/赤点（curIcon）は非表示にするよう修正
     // 軌跡
     L.polyline(trackPoints, { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
+
+    // 予報の暴風域（進路予測よりもレイヤーを上にするため、後に描画）
+    fStormCircles.forEach(c => {
+      L.circle([c.lat, c.lon], { radius: c.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+    });
 
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
