@@ -171,7 +171,7 @@ export default function ObsApp() {
         
         if (dist <= Math.abs(p1.r - p2.r) || dist === 0) continue;
 
-        const theta = Math.asin((p1.r - p2.r) / dist);
+        const theta = Math.asin((p2.r - p1.r) / dist);
         const a1 = angle + Math.PI / 2 + theta;
         const a2 = angle - Math.PI / 2 - theta;
 

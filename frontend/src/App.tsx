@@ -561,7 +561,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         
         if (dist <= Math.abs(p1.r - p2.r) || dist === 0) continue;
 
-        const theta = Math.asin((p1.r - p2.r) / dist);
+        const theta = Math.asin((p2.r - p1.r) / dist);
         const a1 = angle + Math.PI / 2 + theta;
         const a2 = angle - Math.PI / 2 - theta;
 
@@ -693,6 +693,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     }
 
     // 予報進路（点線）と予報円
+    const fStormCircles: {lat: number, lon: number, radius: number}[] = [];
     forecasts.forEach((fc: any, idx: number) => {
       if (!fc.lat || !fc.lon) return;
       trackPoints.push([fc.lat, fc.lon]);
@@ -713,10 +714,10 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         weight: 1
       }).addTo(map);
 
-      // 予報の暴風域（円で描画）
+      // 暴風域の予報円情報を収集（後で描画するため）
       const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
       if (fStormCircle && fStormCircle.radius > 0) {
-        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 3, dashArray: '6,6' }).addTo(map);
+        fStormCircles.push(fStormCircle);
       }
 
       // 時刻ラベル：円の中心から線を延ばして表示
@@ -748,6 +749,11 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     // 進路線
     if (trackPoints.length > 1) {
       L.polyline(trackPoints, { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
+
+    // 予報の暴風域（進路予測よりもレイヤーを上にするため、後に描画）
+    fStormCircles.forEach(c => {
+      L.circle([c.lat, c.lon], { radius: c.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+    });
     }
 
     // 全体が見えるようにフィット
