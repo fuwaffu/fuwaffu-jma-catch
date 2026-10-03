@@ -13,6 +13,7 @@ export function drawTyphoon(
   if (!lat || !lon) return [];
   const forecasts = typhoon.forecasts || [];
   const trackPoints: [number, number][] = [[lat, lon]];
+  const maxCurRadius = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
 
   // 扇形（コーン）の外枠を計算するヘルパー
   const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
@@ -182,7 +183,6 @@ export function drawTyphoon(
 
   // 5. 現在位置のラベル
   const curTimeLabel = formatForecastTime(cur.dateTime);
-  const maxCurRadius = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
   const curLabelOffsetKm = maxCurRadius + 60;
   const curRad = -135 * Math.PI / 180;
   const curLabelLat = lat + (curLabelOffsetKm / 111) * Math.cos(curRad);
