@@ -1,0 +1,32 @@
+const fs = require('fs');
+let content = fs.readFileSync('frontend/src/utils/drawTyphoon.ts', 'utf8');
+
+const polyFuncBase64 = "ICBjb25zdCBnZXRBc3ltbWV0cmljUG9seWdvbiA9IChleWVMYXQ6IG51bWJlciwgZXllTG9uOiBudW1iZXIsIHJhZGlpOiBhbnlbXSwgbnVtUG9pbnRzID0gNzIpID0+IHsKICAgIGlmICghcmFkaWkgfHwgcmFkaWkubGVuZ3RoID09PSAwKSByZXR1cm4gbnVsbDsKICAgIGNvbnN0IGFsbCA9IHJhZGlpLmZpbmQoKHI6IGFueSkgPT4gci5kaXJlY3Rpb24gPT09ICflhajln58nIHx8ICFyLmRpcmVjdGlvbik7CiAgICAKICAgIGxldCBtYXhSID0gMCwgbWluT3Bwb3NpdGVSID0gMCwgbWF4RGlyID0gJyc7CiAgICBjb25zdCBkaXJBbmdsZXM6IFJlY29yZDxzdHJpbmcsIG51bWJlcj4gPSB7CiAgICAgICfljJcnOiAwLCAn5YyX5YyX5p2xJzogMjIuNSwgJ+WMl+adsec6IDQ1LCAn5p2x5YyX5p2xJzogNjcuNSwKICAgICAgJ+adsec6IDkwLCAn5p2x5Y2X5p2xJzogMTEyLjUsICfljZfmnbEnOiAxMzUsICfljZfljZfmnbEnOiAxNTcuNSwKICAgICAgJ+WNlyc6IDE4MCwgJ+WNl+WNl+ilvyc6IDIwMi41LCAn5Y2X6KW/JzogMjI1LCAn6KW/5Y2X6KW/JzogMjQ3LjUsCiAgICAgICfopb8nOiAyNzAsICfopb/ljZfopb8nOiAyOTIuNSwgJ+WMl+ilvyc6IDMxNSwgJ+WMl+WMl+ilvyc6IDMzNy41CiAgICB9OwoKICAgIGlmIChhbGwpIHsKICAgICAgbWF4UiA9IGFsbC5yYWRpdXNLbTsKICAgICAgbWluT3Bwb3NpdGVSID0gYWxsLnJhZGl1c0ttOwogICAgICBtYXhEaXIgPSAn5YyXJzsKICAgIH0gZWxzZSB7CiAgICAgIGZvciAoY29uc3QgciBvZiByYWRpaSkgewogICAgICAgIGlmIChyLnJhZGl1c0ttID4gbWF4UikgeyBtYXhSID0gci5yYWRpdXNLbTsgbWF4RGlyID0gKHIuZGlyZWN0aW9uIHx8ICcnKS5yZXBsYWNlKCflgbQnLCAnJyk7IH0KICAgICAgfQogICAgICBjb25zdCBtYXhBbmdsZSA9IGRpckFuZ2xlc1ttYXhEaXJdOwogICAgICBpZigocWF4QW5nbGUgIT09IHVuZGVmaW5lZCkgewogICAgICAgIGNvbnN0IG9wcEFuZ2xlID0gKG1heEFuZ2xlICsgMTgwKSAlIDM2MDsKICAgICAgICBsZXQgbWluRGlmZiA9IDM2MDsKICAgICAgICBmb3IgKGNvbnN0IHIgb2YgcmFkaWkpIHsKICAgICAgICAgICBjb25zdCBkaXIgPSAoci5kaXJlY3Rpb24gfHwgJycpLnJlcGxhY2UoJ+WBtCcsICcnKTsKICAgICAgICAgICBjb25zdCBhbmdsZSA9IGRpckFuZ2xlc1tkaXJdOwogICAgICAgICAgIGlmIChhbmdsZSAhPT0gdW5kZWZpbmVkKSB7CiAgICAgICAgICAgICBsZXQgZGlmZiA9IE1hdGguYWJzKGFuZ2xlIC0gb3BwQW5nbGUpOwogICAgICAgICAgICAgaWYgKGRpZmYgPiAxODApIGRpZmYgPSAzNjAgLSBkaWZmOwogICAgICAgICAgICAgaWYgKGRpZmYgPCBtaW5EaWZmKSB7IG1pbkRpZmYgPSBkaWZmOyBtaW5PcHBvc2l0ZVIgPSByLnJhZGl1c0ttOyB9CiAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgfSBlbHNlIHsKICAgICAgICBtaW5PcHBvc2l0ZVIgPSBtYXhSOwogICAgICB9CiAgICB9CgogICAgY29uc3QgbWF4QW5nbGUgPSBkaXJBbmdsZXNbbWF4RGlyXSB8fCAwOwogICAgY29uc3QgcG9pbnRzOiBbbnVtYmVyLCBudW1iZXJdW10gPSBbXTsKICAgIAogICAgZm9yIChsZXQgaSA9IDA7IGkgPCBudW1Qb2ludHM7IGkrKykgewogICAgICBjb25zdCBhbmdsZSA9IChpICogMzYwKSAvIG51bVBvaW50czsKICAgICAgbGV0IGRpZmYgPSBNYXRoLmFicyhhbmdsZSAtIG1heEFuZ2xlKTsKICAgICAgaWYgKGRpZmYgPiAxODApIGRpZmYgPSAzNjAgLSBkaWZmOwogICAgICAKICAgICAgY29uc3QgciA9IGRpZmYgPD0gOTAgPyBtYXhSIDwgbWluT3Bwb3NpdGVSOgogICAgICBjb25zdCBkTGF0ID0gKHIgKiBNYXRoLmNvcyhhbmdsZSAqIE1hdGguUEkgLyAxODApKSAvIDExMTsKICAgICAgY29uc3QgZExvbiA9IChyICogTWF0aC5zaW4oYW5nbGUgKiBNYXRoLlBJIC8gMTgwKSkgLyAoMTExICogTWF0aC5jb3MoZXllTGF0ICogTWF0aC5QSSAvIDE4MCkpOwogICAgICBwb2ludHMucHVzaChbZXllTGF0ICsgZExhdCwgZXllTG9uICsgZExvbl0pOwogICAgfQogICAgcmV0dXJuIHBvaW50czsKICB9Owo=";
+const polyFunc = Buffer.from(polyFuncBase64, 'base64').toString('utf8');
+
+if (!content.includes('getAsymmetricPolygon(')) {
+  content = content.replace(/  const getTrueCircleFromRadii = /m, polyFunc + "\n  const getTrueCircleFromRadii = ");
+}
+
+const oldGaleBase64 = "ICBjb25zdCBjdXJHYWxlQ2lyY2xlID0gZ2V0VHJ1ZUNpcmNsZUZyb21SYWRpaShsYXQsIGxvbiwgY3VyLmdhbGVSYWRpaSk7XHJcbiAgYWRkU3RlcCgwLCAoKSA9PiB7XHJcbiAgICBpZiAoY3VyR2FsZUNpcmNsZSAmJiBjdXJHYWxlQ2lyY2xlLnJhZGl1cyA+IDApIHtcclxuICAgICAgTC5jaXJjbGUoW2N1ckdhbGVDaXJjbGUubGF0LCBjdXJHYWxlQ2lyY2xlLmxvbl0sIHsgcmFkaXVzOiBjdXJHYWxlQ2lyY2xlLnJhZGl1cyAqIDEwMDAsIGNvbG9yOiAnI0ZGRkYwMCcsIGZpbGxDb2xvcjogJyNGRkZGMDAnLCBmaWxsT3BhY2l0eTogMC4zLCB3ZWlnaHQ6IDMsIGNsYXNzTmFtZTogaXNPYnMgPyAnb2JzLWZhZGUtaW4nIDogJycgfSkuYWRkVG8obWFwKTtcclxuICAgIH1cclxuICB9KTs=";
+const oldGale = Buffer.from(oldGaleBase64, 'base64').toString('utf8');
+
+const newGaleBase64 = "ICBjb25zdCBjdXJHYWxlUG9seSA9IGdldEFzeW1tZXRyaWNQb2x5Z29uKGxhdCwgbG9uLCBjdXIuZ2FsZVJhZGlpKTtcclxuICBhZGRTdGVwKDAsICgpID0+IHtcclxuICAgIGlmIChjdXJHYWxlUG9seSAmJiBjdXJHYWxlUG9seS5sZW5ndGggPiAwKSB7XHJcbiAgICAgIEwucG9seWdvbihjdXJHYWxlUG9seSwgeyBjb2xvcjogJyNGRkZGMDAnLCBmaWxsQ29sb3I6ICcjRkZGRjAwJywgZmlsbE9wYWNpdHk6IDAuMywgd2VpZ2h0OiAzLCBjbGFzc05hbWU6IGlzT2JzID8gJ29icy1mYWRlLWluJyA6ICcnIH0pLmFkZFRvKG1hcCk7XHJcbiAgICB9XHJcbiAgfSk7";
+const newGale = Buffer.from(newGaleBase64, 'base64').toString('utf8');
+
+const oldStormBase64 = "ICBjb25zdCBjdXJTdG9ybUNpcmNsZSA9IGdldFRydWVDaXJjbGVGcm9tUmFkaWkobGF0LCBsb24sIGN1ci5zdG9ybVJhZGlpKTtcclxuICBhZGRTdGVwKDAsICgpID0+IHtcclxuICAgIGlmIChjdXJTdG9ybUNpcmNsZSAmJiBjdXJTdG9ybUNpcmNsZS5yYWRpdXMgPiAwKSB7XHJcbiAgICAgIEwuY2lyY2xlKFtjdXJTdG9ybUNpcmNsZS5sYXQsIGN1clN0b3JtQ2lyY2xlLmxvbl0sIHsgcmFkaXVzOiBjdXJTdG9ybUNpcmNsZS5yYWRpdXMgKiAxMDAwLCBjb2xvcjogJyNGRjI4MDAnLCBmaWxsQ29sb3I6ICcjRkYyODAwJywgZmlsbE9wYWNpdHk6IDAuMywgd2VpZ2h0OiAzLCBjbGFzc05hbWU6IGlzT2JzID8gJ29icy1mYWRlLWluJyA6ICcnIH0pLmFkZFRvKG1hcCk7XHJcbiAgICB9XHJcbiAgfSk7";
+const oldStorm = Buffer.from(oldStormBase64, 'base64').toString('utf8');
+
+const newStormBase64 = "ICBjb25zdCBjdXJTdG9ybVBvbHkgPSBnZXRBc3ltbWV0cmljUG9seWdvbihsYXQsIGxvbiwgY3VyLnN0b3JtUmFkaWkpO1xyXG4gIGFkZFN0ZXAoMCwgKCkgPT4ge1xyXG4gICAgaWYgKGN1clN0b3JtUG9seSAmJiBjdXJTdG9ybVBvbHkubGVuZ3RoID4gMCkge1xyXG4gICAgICBMLnBvbHlnb24oY3VyU3Rvcm1Qb2x5LCB7IGNvbG9yOiAnI0ZGMjgwMCcsIGZpbGxDb2xvcjogJyNGRjI4MDAnLCBmaWxsT3BhY2l0eTogMC4zLCB3ZWlnaHQ6IDMsIGNsYXNzTmFtZTogaXNPYnMgPyAnb2JzLWZhZGUtaW4nIDogJycgfSkuYWRkVG8obWFwKTtcclxuICAgIH1cclxuICB9KTs=";
+const newStorm = Buffer.from(newStormBase64, 'base64').toString('utf8');
+
+// Also need to use regex because of LF vs CRLF
+const replaceRegex = (text, regexStr, replacement) => {
+  return text.replace(new RegExp(regexStr, 'm'), replacement);
+};
+
+content = replaceRegex(content, oldGale.replace(/\\r\\n/g, '\\r?\\n').replace(/\\./g, '\\\\.').replace(/\\(/g, '\\\\(').replace(/\\)/g, '\\\\)').replace(/\\[/g, '\\\\[').replace(/\\]/g, '\\\\]').replace(/\\*/g, '\\\\*').replace(/\\?/g, '\\\\?'), newGale);
+content = replaceRegex(content, oldStorm.replace(/\\r\\n/g, '\\r?\\n').replace(/\\./g, '\\\\.').replace(/\\(/g, '\\\\(').replace(/\\)/g, '\\\\)').replace(/\\[/g, '\\\\[').replace(/\\]/g, '\\\\]').replace(/\\*/g, '\\\\*').replace(/\\?/g, '\\\\?'), newStorm);
+
+fs.writeFileSync('frontend/src/utils/drawTyphoon.ts', content);
+console.log('Successfully fixed poly');

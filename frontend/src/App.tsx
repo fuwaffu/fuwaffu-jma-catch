@@ -504,7 +504,11 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
 
 
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    if (!mapRef.current) return;
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
 
     const lat = cur.lat || 30;
     const lon = cur.lon || 135;

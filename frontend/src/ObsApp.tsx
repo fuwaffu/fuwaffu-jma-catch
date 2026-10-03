@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import L from 'leaflet';
 import { drawTyphoon } from './utils/drawTyphoon';
 import 'leaflet/dist/leaflet.css';
@@ -157,7 +157,7 @@ export default function ObsApp() {
     const lon = cur.lon;
     if (!lat || !lon) return;
 
-    const trackPoints = drawTyphoon(map, activeTyphoon, { isObs: true });
+    const trackPoints = drawTyphoon(map, activeTyphoon, { isObs: true, use24HourFormat: true });
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
     // 予報円と現在位置全体を当たり判定として四角形の範囲(バウンズ)を生成
@@ -277,10 +277,10 @@ export default function ObsApp() {
         }}>
           <div style={{ fontSize: '56px', color: '#93c5fd', marginBottom: '8px', fontWeight: 700, lineHeight: 1.1 }}>
             台風<span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900, fontSize: '72px', margin: '0 8px' }}>{typhoonNum}</span>号
-            <span style={{ fontSize: '24px', color: '#cbd5e1', marginLeft: '16px', fontWeight: 600 }}>({activeTyphoon.nameEn})</span>
+            
           </div>
           <div style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '2px' }}>
-            {activeTyphoon.name}
+            {activeTyphoon.name}`n            {activeTyphoon.nameEn && <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px', fontWeight: 600, letterSpacing: 'normal' }}>({activeTyphoon.nameEn})</span>}
           </div>
           <div style={{ marginTop: '20px', fontSize: '22px', color: '#94a3b8' }}>
             <span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900 }}>{dt.getDate()}</span>日
@@ -348,3 +348,4 @@ export default function ObsApp() {
     </div>
   );
 }
+
