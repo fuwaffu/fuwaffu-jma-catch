@@ -5,42 +5,42 @@ const d3 = require('d3-geo');
 const geojsonStr = fs.readFileSync('../frontend/public/world_50m.geojson', 'utf8');
 const geojson = JSON.parse(geojsonStr);
 
-// We want equirectangular because Leaflet's L.imageOverlay expects linear lat/lon to stretch properly over Mercator.
-const projection = d3.geoEquirectangular();
+// We must use Web Mercator so it matches Leaflet's projection!
+const projection = d3.geoMercator();
 
-// Center on Japan (Lon 135, Lat 0 for the equator)
-// Rotate shifts the map. A negative longitude rotation shifts the map east.
+// Center on Japan: lon 135.
 projection.rotate([-135, 0]);
 
-// Bounds: -80 to 80 lat. Longitude will be effectively -45 to 315.
-const width = 7680;
-// Equirectangular maps 360 degrees to width.
-// Height should be for 160 degrees (from -80 to 80).
-// 160 / 360 = 0.4444...
-const height = Math.round(width * (160 / 360));
+// We want the bounds to correspond exactly to:
+const minLon = -45;
+const maxLon = 315;
+const minLat = -80;
+const maxLat = 80;
 
-// Fit the projection to exactly these dimensions
-projection.fitExtent([[0, 0], [width, width * (180/360)]], {type: "Sphere"});
-// Wait, if we use fitExtent on Sphere, it fits -90 to 90.
-// But we want to crop to -80 to 80.
-// Let's just manually scale and translate.
-// Equirectangular formula: x = (lon - lambda0) * cos(phi1)
-// With rotate([-135, 0]), the center (135) is at x=0.
-// Map width spans 360 degrees, so scale = width / (2 * PI)
+const width = 7680;
+
+// In d3.geoMercator, total width for 360 degrees is 2 * PI * scale
+// We want exactly 360 degrees (from -45 to 315 is 360 degrees).
 const scale = width / (2 * Math.PI);
 
-projection
-  .scale(scale)
-  .translate([width / 2, height / 2]); 
-  
-// But wait, the standard translation puts lat 0 at height/2.
-// Since we want -80 to 80, lat 0 IS exactly at height / 2.
-// The total vertical span is 160 degrees out of 180.
-// If scale is width / (2 * PI), then 180 degrees is width / 2.
-// So 160 degrees is (160/360) * width.
-// Our canvas height is (160/360) * width.
-// The center of the canvas is height / 2.
-// So lat=0 is mapped to height/2. This perfectly crops -80 to 80!
+projection.scale(scale);
+
+// To find height, we need the projected Y of maxLat (80) and minLat (-80).
+// In d3.geoMercator, the center (0,0) is mapped to projection.translate().
+// If we set translate to [width / 2, 0], we can easily find the Y span.
+projection.translate([width / 2, 0]);
+
+const pTopLeft = projection([minLon, maxLat]); // Top-Left
+const pBottomRight = projection([maxLon, minLat]); // Bottom-Right
+
+// Height is the difference in Y
+const height = Math.round(pBottomRight[1] - pTopLeft[1]);
+
+// Now adjust translate so that the top-left is exactly at [0, 0]
+projection.translate([
+  width / 2 - pTopLeft[0],
+  -pTopLeft[1]
+]);
 
 const canvas = createCanvas(width, height);
 const ctx = canvas.getContext('2d');
@@ -60,5 +60,5 @@ ctx.stroke();
 const buffer = canvas.toBuffer('image/png');
 fs.writeFileSync('../frontend/public/map_bg.png', buffer);
 
-console.log(`Generated equirectangular map_bg.png! Size: ${width}x${height}`);
-console.log(`Leaflet Bounds: [[-80, -45], [80, 315]]`);
+console.log(`Generated Web Mercator map_bg.png! Size: ${width}x${height}`);
+console.log(`Leaflet Bounds: [[${minLat}, ${minLon}], [${maxLat}, ${maxLon}]]`);

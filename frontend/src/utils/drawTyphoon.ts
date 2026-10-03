@@ -7,11 +7,10 @@ export function drawTyphoon(
 ) {
   // ponytail: Extracted shared drawing logic to prevent divergence between DB and OBS
   const { isObs = false, use24HourFormat = false } = options;
-  const cur = typhoon.current;
-  if (!cur || !cur.center) return [];
-
-  const lat = cur.center.lat;
-  const lon = cur.center.lon;
+  const cur = typhoon.current || {};
+  const lat = cur.lat;
+  const lon = cur.lon;
+  if (!lat || !lon) return [];
   const forecasts = typhoon.forecasts || [];
   const trackPoints: [number, number][] = [[lat, lon]];
 
