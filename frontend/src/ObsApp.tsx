@@ -160,8 +160,9 @@ export default function ObsApp() {
     const trackPoints = drawTyphoon(map, activeTyphoon, { isObs: true });
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
-    // 予報円を含むすべての円を考慮してバウンズを拡張
+    // 予報円と現在位置全体を当たり判定として四角形の範囲(バウンズ)を生成
     const extendBoundsForPoint = (lat: number, lon: number, r: number) => {
+      // 半径(km)を緯度経度の度に変換してバウンズを拡張
       const dLatBound = r / 111;
       const dLonBound = r / (111 * Math.cos(lat * Math.PI / 180));
       bounds.extend([lat + dLatBound, lon]);
@@ -181,9 +182,11 @@ export default function ObsApp() {
         if (f.lat && f.lon) extendBoundsForPoint(f.lat, f.lon, fR);
       });
     }
-
-    // OBSは1920x1080なので広めにパディング、かつ寄りすぎないよう最大ズームを6に制限
-    map.fitBounds(bounds, { padding: [54, 54], maxZoom: 6 });
+    
+    // 生成した四角形の範囲に対して、外側15%を余白として確保する計算ロジック
+    // bounds.pad(0.15) はバウンズの縦横の幅の15%分を外側に拡張します
+    const paddedBounds = bounds.isValid() ? bounds.pad(0.15) : bounds;
+    map.fitBounds(paddedBounds, { padding: [0, 0], maxZoom: 6 });
 
   }, [activeTyphoon, use24HourFormat]);
 
