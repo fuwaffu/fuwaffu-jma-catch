@@ -511,13 +511,35 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
     mapInstanceRef.current = map;
 
-    // Pre-rendered 4K map background (much lighter processing for OBS)
-    const bounds: L.LatLngBoundsExpression = [[-80, -45], [80, 315]];
     const targetMap = mapInstanceRef.current;
     if (targetMap) {
-      const bgLayer = L.imageOverlay('/map_bg.png', bounds);
-      (bgLayer as any).isBaseMap = true;
-      bgLayer.addTo(targetMap);
+      fetch('/world_50m.geojson')
+        .then(res => res.json())
+        .then(data => {
+          const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
+          const bgLayer = L.geoJSON(data, { style });
+          (bgLayer as any).isBaseMap = true;
+          bgLayer.addTo(targetMap);
+
+          // ponytail: To prevent the map from cutting off at longitude 180 (right of Japan),
+          // we add a second geojson layer shifted by +360 degrees.
+          const shiftedData = JSON.parse(JSON.stringify(data));
+          shiftedData.features.forEach((f: any) => {
+            if (f.geometry) {
+              const shiftCoords = (coords: any[]) => {
+                if (typeof coords[0] === 'number') {
+                  coords[0] += 360;
+                } else {
+                  coords.forEach(shiftCoords);
+                }
+              };
+              shiftCoords(f.geometry.coordinates);
+            }
+          });
+          const bgLayerRight = L.geoJSON(shiftedData, { style });
+          (bgLayerRight as any).isBaseMap = true;
+          bgLayerRight.addTo(targetMap);
+        });
     }
 
     const trackPoints = drawTyphoon(map, typhoon, { isObs: false, use24HourFormat });
