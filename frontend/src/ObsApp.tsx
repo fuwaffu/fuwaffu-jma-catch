@@ -160,20 +160,26 @@ export default function ObsApp() {
     const trackPoints = drawTyphoon(map, activeTyphoon, { isObs: true });
     // マップの表示範囲を調整
     const bounds = L.latLngBounds(trackPoints);
-    
-    // 現在の強風域・暴風域の最大半径を考慮してバウンズを拡張
-    const maxRadius = Math.max(
-      ...((cur.galeRadii || []).map((r: any) => r.radiusKm || 0)),
-      ...((cur.stormRadii || []).map((r: any) => r.radiusKm || 0))
-    );
-    if (maxRadius > 0) {
-      const dLatBound = maxRadius / 111;
+    // 予報円を含むすべての円を考慮してバウンズを拡張
+    const extendBoundsForPoint = (lat: number, lon: number, r: number) => {
+      const dLatBound = r / 111;
+      const dLonBound = r / (111 * Math.cos(lat * Math.PI / 180));
       bounds.extend([lat + dLatBound, lon]);
       bounds.extend([lat - dLatBound, lon]);
-      // 経度方向の広がり（緯度による補正）
-      const dLonBound = maxRadius / (111 * Math.cos(lat * Math.PI / 180));
       bounds.extend([lat, lon + dLonBound]);
       bounds.extend([lat, lon - dLonBound]);
+    };
+
+    if (activeTyphoon.current) {
+      const cur = activeTyphoon.current;
+      const curR = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
+      extendBoundsForPoint(cur.lat || 30, cur.lon || 135, curR);
+    }
+    if (activeTyphoon.forecasts) {
+      activeTyphoon.forecasts.forEach((f: any) => {
+        const fR = (f.circleRadiusKm || 0) + Math.max(...(f.stormRadii||[]).map((r:any)=>r.radiusKm), 0);
+        if (f.lat && f.lon) extendBoundsForPoint(f.lat, f.lon, fR);
+      });
     }
 
     // OBSは1920x1080なので広めにパディング、かつ寄りすぎないよう最大ズームを6に制限

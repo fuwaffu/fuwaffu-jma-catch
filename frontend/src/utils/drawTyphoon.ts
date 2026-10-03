@@ -160,7 +160,7 @@ export function drawTyphoon(
     const checkCircle = (cLat: number, cLon: number, cRadius: number) => {
       if (cRadius <= 0) return;
       const d = Math.sqrt(Math.pow((lLat - cLat) * 111, 2) + Math.pow((lLon - cLon) * 111 * Math.cos((cLat + lLat) / 2 * Math.PI / 180), 2));
-      if (d < cRadius + 140) maxDist = Math.max(maxDist, cRadius + 140 - d);
+      if (d < cRadius + 200) maxDist = Math.max(maxDist, cRadius + 200 - d);
     };
 
     if (curGaleCircle) checkCircle(curGaleCircle.lat, curGaleCircle.lon, curGaleCircle.radius);
@@ -211,8 +211,17 @@ export function drawTyphoon(
 
       // ラベル
       const timeLabel = formatForecastTime(fc.dateTime);
-      const angle = (idx % 2 === 0) ? -90 : 90; // Left or Right
-      let labelOffsetKm = (fc.circleRadiusKm || 50) + (isObs ? 160 : 90); 
+      let dLat = fc.lat - lat;
+      let dLon = (fc.lon - lon) * Math.cos(lat * Math.PI / 180);
+      if (idx > 0) {
+        const prev = forecasts[idx - 1];
+        dLat = fc.lat - prev.lat;
+        dLon = (fc.lon - prev.lon) * Math.cos(prev.lat * Math.PI / 180);
+      }
+      const pathAngle = Math.atan2(dLon, dLat) * 180 / Math.PI;
+      const angle = pathAngle + ((idx % 2 === 0) ? -90 : 90); // Left or Right of path
+      
+      let labelOffsetKm = (fc.circleRadiusKm || 50) + (isObs ? 200 : 120); 
       const rad = angle * Math.PI / 180;
       let labelLat = fc.lat + (labelOffsetKm / 111) * Math.cos(rad);
       let labelLon = fc.lon + (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
@@ -243,8 +252,13 @@ export function drawTyphoon(
   // 5. 現在位置のラベル
   addStep(0, () => {
     const curTimeLabel = formatForecastTime(cur.dateTime);
-    let curLabelOffsetKm = 60;
-    const curRad = -90 * Math.PI / 180; // Left
+    let curLabelOffsetKm = 90;
+    let pathAngle = 0;
+    if (forecasts.length > 0) {
+      const f = forecasts[0];
+      pathAngle = Math.atan2((f.lon - lon)*Math.cos(lat*Math.PI/180), f.lat - lat) * 180 / Math.PI;
+    }
+    const curRad = (pathAngle - 90) * Math.PI / 180; // Left of path
     let curLabelLat = lat + (curLabelOffsetKm / 111) * Math.cos(curRad);
     let curLabelLon = lon + (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
     let attempts = 0;
