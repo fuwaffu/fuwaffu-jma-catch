@@ -314,12 +314,12 @@ export default function ObsApp() {
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
     if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 2 }).addTo(map);
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 3 }).addTo(map);
     }
 
     const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
     if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 1, dashArray: '5,5' }).addTo(map);
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 3 }).addTo(map);
     }
 
 
