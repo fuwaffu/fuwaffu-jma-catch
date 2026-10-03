@@ -257,11 +257,11 @@ export default function ObsApp() {
           boxShadow: '0 15px 35px rgba(0,0,0,0.5)',
           backdropFilter: 'blur(12px)'
         }}>
-          <div style={{ fontSize: '28px', color: '#93c5fd', marginBottom: '8px', fontWeight: 700 }}>
-            台風<span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900, fontSize: '40px', margin: '0 6px' }}>{typhoonNum}</span>号
-            <span style={{ fontSize: '20px', color: '#cbd5e1', marginLeft: '12px' }}>({activeTyphoon.nameEn})</span>
+          <div style={{ fontSize: '56px', color: '#93c5fd', marginBottom: '8px', fontWeight: 700, lineHeight: 1.1 }}>
+            台風<span style={{ fontFamily: "'Lato', sans-serif", fontWeight: 900, fontSize: '72px', margin: '0 8px' }}>{typhoonNum}</span>号
+            <span style={{ fontSize: '24px', color: '#cbd5e1', marginLeft: '16px', fontWeight: 600 }}>({activeTyphoon.nameEn})</span>
           </div>
-          <div style={{ fontSize: '56px', fontWeight: 700, letterSpacing: '2px', lineHeight: 1.1 }}>
+          <div style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '2px' }}>
             {activeTyphoon.name}
           </div>
           <div style={{ marginTop: '20px', fontSize: '22px', color: '#94a3b8' }}>

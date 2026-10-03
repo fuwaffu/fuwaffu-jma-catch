@@ -113,8 +113,8 @@ export function drawTyphoon(
   if (forecastPolygon.length > 0) {
     for (let i = 0; i < forecasts.length; i++) {
       addStep(i + 1, () => {
-        if (forecastPolygon[i*2] && forecastPolygon[i*2].length > 0) L.polyline([forecastPolygon[i*2]], { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
-        if (forecastPolygon[i*2+1] && forecastPolygon[i*2+1].length > 0) L.polyline([forecastPolygon[i*2+1]], { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+        if (forecastPolygon[i*2] && forecastPolygon[i*2].length > 0) L.polyline([forecastPolygon[i*2]], { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5', className: isObs ? 'obs-fade-in' : '' }).addTo(map);
+        if (forecastPolygon[i*2+1] && forecastPolygon[i*2+1].length > 0) L.polyline([forecastPolygon[i*2+1]], { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5', className: isObs ? 'obs-fade-in' : '' }).addTo(map);
       });
     }
   }
@@ -134,8 +134,8 @@ export function drawTyphoon(
   if (stormPolygon.length > 0) {
     for (let i = 0; i < forecasts.length; i++) {
       addStep(i + 1, () => {
-        if (stormPolygon[i*2] && stormPolygon[i*2].length > 0) L.polyline([stormPolygon[i*2]], { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
-        if (stormPolygon[i*2+1] && stormPolygon[i*2+1].length > 0) L.polyline([stormPolygon[i*2+1]], { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+        if (stormPolygon[i*2] && stormPolygon[i*2].length > 0) L.polyline([stormPolygon[i*2]], { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5', className: isObs ? 'obs-fade-in' : '' }).addTo(map);
+        if (stormPolygon[i*2+1] && stormPolygon[i*2+1].length > 0) L.polyline([stormPolygon[i*2+1]], { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5', className: isObs ? 'obs-fade-in' : '' }).addTo(map);
       });
     }
   }
@@ -144,13 +144,13 @@ export function drawTyphoon(
   const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
   addStep(0, () => {
     if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 3 }).addTo(map);
+      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFFF00', fillColor: '#FFFF00', fillOpacity: 0.3, weight: 3, className: isObs ? 'obs-fade-in' : '' }).addTo(map);
     }
   });
   const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
   addStep(0, () => {
     if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 3 }).addTo(map);
+      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.3, weight: 3, className: isObs ? 'obs-fade-in' : '' }).addTo(map);
     }
   });
 
@@ -184,28 +184,28 @@ export function drawTyphoon(
     addStep(step, () => {
       // 予報円
       if (fc.circleRadiusKm > 0) {
-        L.circle([fc.lat, fc.lon], { radius: fc.circleRadiusKm * 1000, color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+        L.circle([fc.lat, fc.lon], { radius: fc.circleRadiusKm * 1000, color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5', className: isObs ? 'obs-fade-in' : '' }).addTo(map);
       }
 
       // マーカー
       const cMarkerProps = isObs 
-        ? { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1, weight: 1, pane: 'markerPane' }
+        ? { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1, weight: 1, pane: 'markerPane', className: 'obs-fade-in' }
         : { radius: 3, color: '#000', fillColor: '#000', fillOpacity: 1, weight: 1 };
       L.circleMarker([fc.lat, fc.lon], cMarkerProps as any).addTo(map);
 
       // 暴風域予報円
       const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
       if (fStormCircle && fStormCircle.radius > 0) {
-        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '5,5', className: isObs ? 'obs-fade-in' : '' }).addTo(map);
       }
 
       // 白の進路予測線
       if (idx === 0) {
-        L.polyline([[lat, lon], [fc.lat, fc.lon]], { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
+        L.polyline([[lat, lon], [fc.lat, fc.lon]], { color: '#ffffff', weight: 2, opacity: 1, className: isObs ? 'obs-fade-in' : '' }).addTo(map);
       } else {
         const prevFc = forecasts[idx - 1];
         if (prevFc && prevFc.lat && prevFc.lon) {
-          L.polyline([[prevFc.lat, prevFc.lon], [fc.lat, fc.lon]], { color: '#ffffff', weight: 2, opacity: 1 }).addTo(map);
+          L.polyline([[prevFc.lat, prevFc.lon], [fc.lat, fc.lon]], { color: '#ffffff', weight: 2, opacity: 1, className: isObs ? 'obs-fade-in' : '' }).addTo(map);
         }
       }
 
@@ -235,7 +235,7 @@ export function drawTyphoon(
       }
 
       L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
-        color: isObs ? '#e2e8f0' : '#666', weight: isObs ? 2 : 1.5, opacity: 0.8, dashArray: isObs ? '4,4' : '2,2'
+        color: isObs ? '#e2e8f0' : '#666', weight: isObs ? 2 : 1.5, opacity: 0.8, dashArray: isObs ? '4,4' : '2,2', className: isObs ? 'obs-fade-in' : ''
       }).addTo(map);
 
       const html = isObs 
@@ -243,7 +243,7 @@ export function drawTyphoon(
         : `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`;
 
       L.marker([labelLat, labelLon], { 
-        icon: L.divIcon({ html, iconSize: [0, 0], iconAnchor: isObs ? undefined : [0, 0], className: '' }),
+        icon: L.divIcon({ html, iconSize: [0, 0], iconAnchor: isObs ? undefined : [0, 0], className: isObs ? 'obs-fade-in' : '' }),
         zIndexOffset: 1000 
       }).addTo(map);
     });
@@ -276,7 +276,7 @@ export function drawTyphoon(
       : `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`;
 
     L.marker([curLabelLat, curLabelLon], { 
-      icon: L.divIcon({ html: curHtml, iconSize: [0, 0], iconAnchor: isObs ? undefined : [0, 0], className: '' })
+      icon: L.divIcon({ html: curHtml, iconSize: [0, 0], iconAnchor: isObs ? undefined : [0, 0], className: isObs ? 'obs-fade-in' : '' })
     }).addTo(map);
   });
 
@@ -285,7 +285,7 @@ export function drawTyphoon(
     addStep(0, () => {
       const typhoonIcon = L.divIcon({
         html: '<div style="font-size:24px;text-align:center;line-height:1;color:#FF2800;font-weight:bold;text-shadow:1px 1px 0 #fff,-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff;">×</div>',
-        iconSize: [24, 24], iconAnchor: [12, 12], className: '',
+        iconSize: [24, 24], iconAnchor: [12, 12], className: isObs ? 'obs-fade-in' : '',
       });
       L.marker([lat, lon], { icon: typhoonIcon }).addTo(map)
         .bindPopup(`<b>${typhoon.name?.text || ''}</b><br>${cur.location || ''}<br>${cur.pressure}hPa / 最大風速${cur.maxWind}m/s`);
