@@ -109,7 +109,7 @@ export default function ObsApp() {
       });
 
       // Pre-rendered 4K map background (much lighter processing for OBS)
-    const bounds: L.LatLngBoundsExpression = [[-20, 70], [60, 180]];
+    const bounds: L.LatLngBoundsExpression = [[-80, -180], [80, 180]];
     const targetMap = mapInstanceRef.current;
     if (targetMap) {
       const bgLayer = L.imageOverlay('/map_bg.png', bounds);
@@ -274,7 +274,8 @@ export default function ObsApp() {
 
     // 現在位置の時刻ラベル
     const curTimeLabel = formatForecastTime(cur.dateTime);
-    const curLabelOffsetKm = 80;
+    const maxCurRadius = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
+    const curLabelOffsetKm = maxCurRadius + 60;
     const curRad = -135 * Math.PI / 180;
     const curDLat = (curLabelOffsetKm / 111) * Math.cos(curRad);
     const curDLon = (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
@@ -426,7 +427,7 @@ export default function ObsApp() {
       overflow: 'hidden'
     }}>
       {/* 背景地図 */}
-      <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1, backgroundColor: '#475569' }} />
+      <div ref={mapRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1, backgroundColor: '#87cefa' }} />
       
       {/* グラデーションオーバーレイ (情報が見やすいように) */}
       <div style={{

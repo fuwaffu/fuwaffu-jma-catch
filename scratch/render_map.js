@@ -2,15 +2,14 @@ const fs = require('fs');
 const { createCanvas } = require('canvas');
 const d3 = require('d3-geo');
 
-const geojsonStr = fs.readFileSync('../frontend/public/world.geojson', 'utf8');
+const geojsonStr = fs.readFileSync('../frontend/public/world_50m.geojson', 'utf8');
 const geojson = JSON.parse(geojsonStr);
 
-// We want to render a wide area: Lon 80 to 180, Lat -20 to 60
-// We need to define exactly what LatLng bounds this image corresponds to for Leaflet's imageOverlay.
-const minLon = 70;
-const maxLon = 180; // or 190? let's stick to 180. Wait, 70 to 180 is 110 degrees.
-const minLat = -20;
-const maxLat = 60;
+// 縦を2倍 (80度 -> 160度)、横を4倍 (110度 -> 360度: 地球全周)
+const minLon = -180;
+const maxLon = 180;
+const minLat = -80;
+const maxLat = 80;
 
 // Leaflet uses standard Web Mercator (EPSG:3857)
 const projection = d3.geoMercator();
@@ -19,9 +18,8 @@ const projection = d3.geoMercator();
 const pMin = projection([minLon, maxLat]); // Top-Left
 const pMax = projection([maxLon, minLat]); // Bottom-Right
 
-// Let's decide a resolution. 1 degree = roughly 50 pixels?
-// 110 degrees * 50 = 5500 pixels wide. Let's make it 3840 pixels wide (4K).
-const width = 3840;
+// Since the width is covering 360 degrees now, let's use a very large canvas width (e.g., 7680 for 8K)
+const width = 7680;
 const scaleFactor = width / (pMax[0] - pMin[0]);
 const height = Math.round((pMax[1] - pMin[1]) * scaleFactor);
 
@@ -38,17 +36,10 @@ const ctx = canvas.getContext('2d');
 
 const path = d3.geoPath().projection(projection).context(ctx);
 
-// Fill sea (background) -> transparent? Or colored?
-// The user asked for "海のいろは現在のグレーよりも2段階濃いめの色"
-// In our previous edit, we set backgroundColor on the div to #475569.
-// If the PNG has transparent sea, the div background will show through!
-// But wait, they want the map generated as an image to be light.
-// Transparent PNG is great.
-
 // Draw land
 ctx.fillStyle = '#dcfce7'; // 薄い緑
 ctx.strokeStyle = '#166534'; // 濃い緑
-ctx.lineWidth = 2; // For 4K, line width 2 is good.
+ctx.lineWidth = 2; // For 8K, line width 2 or 3 is good.
 
 ctx.beginPath();
 path(geojson);

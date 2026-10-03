@@ -511,7 +511,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     mapInstanceRef.current = map;
 
     // Pre-rendered 4K map background (much lighter processing for OBS)
-    const bounds: L.LatLngBoundsExpression = [[-20, 70], [60, 180]];
+    const bounds: L.LatLngBoundsExpression = [[-80, -180], [80, 180]];
     const targetMap = mapInstanceRef.current;
     if (targetMap) {
       const bgLayer = L.imageOverlay('/map_bg.png', bounds);
@@ -643,7 +643,8 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     // 現在位置の時刻ラベル
     const curTimeLabel = formatForecastTime(cur.dateTime);
     // 現在位置のラベルは少し左上に配置（予報の最初の点と重なりにくくするため）
-    const curLabelOffsetKm = 80;
+    const maxCurRadius = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
+    const curLabelOffsetKm = maxCurRadius + 60;
     const curRad = -135 * Math.PI / 180;
     const curDLat = (curLabelOffsetKm / 111) * Math.cos(curRad);
     const curDLon = (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
@@ -795,7 +796,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       </div>
 
       {/* 地図 */}
-      <div ref={mapRef} style={{ width: '100%', height: '450px', backgroundColor: '#e2e8f0' }} />
+      <div ref={mapRef} style={{ width: '100%', height: '450px', backgroundColor: '#87cefa' }} />
 
       {/* 情報パネル */}
       <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
