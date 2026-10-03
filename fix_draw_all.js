@@ -1,4 +1,6 @@
-import L from 'leaflet';
+const fs = require('fs');
+
+const fullCode = `import L from 'leaflet';
 
 export function drawTyphoon(
   map: L.Map,
@@ -12,6 +14,7 @@ export function drawTyphoon(
   if (!lat || !lon) return [];
   const forecasts = typhoon.forecasts || [];
   const trackPoints: [number, number][] = [[lat, lon]];
+  const maxCurRadius = Math.max(...(cur.stormRadii||[]).map((r: any)=>r.radiusKm), ...(cur.galeRadii||[]).map((r: any)=>r.radiusKm), 0);
 
   const steps: (() => void)[][] = [];
   const addStep = (stepIdx: number, fn: () => void) => {
@@ -99,11 +102,11 @@ export function drawTyphoon(
       if (isNaN(d.getTime())) return isoStr;
       const day = d.getDate(), hour = d.getHours();
       const weekDay = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-      if (use24HourFormat) return `${day}日(${weekDay}) ${hour}時`;
-      if (hour === 0) return `${day}日(${weekDay}) 午前0時`;
-      if (hour < 12) return `${day}日(${weekDay}) 午前${hour}時`;
-      if (hour === 12) return `${day}日(${weekDay}) 午後0時`;
-      return `${day}日(${weekDay}) 午後${hour - 12}時`;
+      if (use24HourFormat) return \`\${day}日(\${weekDay}) \${hour}時\`;
+      if (hour === 0) return \`\${day}日(\${weekDay}) 午前0時\`;
+      if (hour < 12) return \`\${day}日(\${weekDay}) 午前\${hour}時\`;
+      if (hour === 12) return \`\${day}日(\${weekDay}) 午後0時\`;
+      return \`\${day}日(\${weekDay}) 午後\${hour - 12}時\`;
     } catch { return isoStr; }
   };
 
@@ -223,8 +226,8 @@ export function drawTyphoon(
       }).addTo(map);
 
       const html = isObs 
-        ? `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:2px solid #999;border-radius:6px;padding:4px 10px;font-size:16px;font-weight:700;color:#333;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`
-        : `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`;
+        ? \`<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:2px solid #999;border-radius:6px;padding:4px 10px;font-size:16px;font-weight:700;color:#333;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">\${timeLabel}</div>\`
+        : \`<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">\${timeLabel}</div>\`;
 
       L.marker([labelLat, labelLon], { 
         icon: L.divIcon({ html, iconSize: [0, 0], iconAnchor: isObs ? undefined : [0, 0], className: '' }),
@@ -251,8 +254,8 @@ export function drawTyphoon(
     L.polyline([[lat, lon], [curLabelLat, curLabelLon]], { color: '#FF2800', weight: 1.5, opacity: 0.8, dashArray: '2,2' }).addTo(map);
 
     const curHtml = isObs
-      ? `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:2px solid #FF2800;border-radius:6px;padding:4px 10px;font-size:16px;font-weight:700;color:#FF2800;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`
-      : `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`;
+      ? \`<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:2px solid #FF2800;border-radius:6px;padding:4px 10px;font-size:16px;font-weight:700;color:#FF2800;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">\${curTimeLabel}</div>\`
+      : \`<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">\${curTimeLabel}</div>\`;
 
     L.marker([curLabelLat, curLabelLon], { 
       icon: L.divIcon({ html: curHtml, iconSize: [0, 0], iconAnchor: isObs ? undefined : [0, 0], className: '' })
@@ -267,7 +270,7 @@ export function drawTyphoon(
         iconSize: [24, 24], iconAnchor: [12, 12], className: '',
       });
       L.marker([lat, lon], { icon: typhoonIcon }).addTo(map)
-        .bindPopup(`<b>${typhoon.name?.text || ''}</b><br>${cur.location || ''}<br>${cur.pressure}hPa / 最大風速${cur.maxWind}m/s`);
+        .bindPopup(\`<b>\${typhoon.name?.text || ''}</b><br>\${cur.location || ''}<br>\${cur.pressure}hPa / 最大風速\${cur.maxWind}m/s\`);
     });
   }
 
@@ -293,3 +296,6 @@ export function drawTyphoon(
 
   return trackPoints;
 }
+`;
+fs.writeFileSync('./frontend/src/utils/drawTyphoon.ts', fullCode);
+console.log('Written successfully');

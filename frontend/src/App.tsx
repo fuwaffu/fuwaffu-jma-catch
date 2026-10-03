@@ -519,6 +519,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
           const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
           const bgLayer = L.geoJSON(data, { style });
           (bgLayer as any).isBaseMap = true;
+          bgLayer.eachLayer((l: any) => l.isBaseMap = true);
           bgLayer.addTo(targetMap);
 
           // ponytail: To prevent the map from cutting off at longitude 180 (right of Japan),
@@ -538,6 +539,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
           });
           const bgLayerRight = L.geoJSON(shiftedData, { style });
           (bgLayerRight as any).isBaseMap = true;
+          bgLayerRight.eachLayer((l: any) => l.isBaseMap = true);
           bgLayerRight.addTo(targetMap);
         });
     }

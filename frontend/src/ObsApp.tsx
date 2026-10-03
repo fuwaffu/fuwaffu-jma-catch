@@ -117,6 +117,7 @@ export default function ObsApp() {
           const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
           const bgLayer = L.geoJSON(data, { style });
           (bgLayer as any).isBaseMap = true;
+          bgLayer.eachLayer((l: any) => l.isBaseMap = true);
           bgLayer.addTo(targetMap);
 
           // ponytail: To prevent the map from cutting off at longitude 180 (right of Japan),
@@ -136,6 +137,7 @@ export default function ObsApp() {
           });
           const bgLayerRight = L.geoJSON(shiftedData, { style });
           (bgLayerRight as any).isBaseMap = true;
+          bgLayerRight.eachLayer((l: any) => l.isBaseMap = true);
           bgLayerRight.addTo(targetMap);
         });
     }
@@ -175,7 +177,7 @@ export default function ObsApp() {
     }
 
     // OBSは1920x1080なので広めにパディング、かつ寄りすぎないよう最大ズームを6に制限
-    map.fitBounds(bounds, { padding: [150, 150], maxZoom: 6 });
+    map.fitBounds(bounds, { padding: [110, 110], maxZoom: 6 });
 
   }, [activeTyphoon, use24HourFormat]);
 
