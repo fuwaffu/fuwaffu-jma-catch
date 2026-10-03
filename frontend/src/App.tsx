@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { buildHierarchy, sortedPrefCodes, areaName, type AreaNode } from './areaHierarchy';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 
@@ -14,9 +15,10 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
 
+  // 表示階層: class10=全国(一次細分一覧) / class15=一次細分内の二次細分一覧 / municipality=二次細分内の市町村一覧
   const [viewMode, setViewMode] = useState<'class10' | 'class15' | 'municipality'>('class10');
-  const [selectedClass10, setSelectedClass10] = useState<string | null>(null);
-  const [selectedClass15, setSelectedClass15] = useState<string | null>(null);
+  const [selectedClass10, setSelectedClass10] = useState<string | null>(null); // 一次細分区域コード
+  const [selectedClass15, setSelectedClass15] = useState<string | null>(null); // 二次細分区域コード
   
   const [use24HourFormat, setUse24HourFormat] = useState(true);
 
@@ -123,74 +125,30 @@ export default function App() {
   }, []);
 
   
-  const activeWarnings = warnings.filter((w: any) => !w.isCancelled);
-  
-  const groupedWarningsMap = new Map();
-  for (const w of activeWarnings) {
-      if (viewMode === 'class15' && w.class10 !== selectedClass10) continue;
-      if (viewMode === 'municipality' && w.class15 !== selectedClass15 && selectedClass15 !== null) continue;
-      
-      let key = '';
-      if (viewMode === 'class10') key = w.class10;
-      else if (viewMode === 'class15') key = w.class15 || w.class10;
-      else if (viewMode === 'municipality') key = w.region;
-      
-      if (!key) continue;
+  // 市町村単位の警報を区域コードで解決し、二次細分・一次細分・府県予報区へ集約
+  const hierarchy = React.useMemo(() => {
+    const h = buildHierarchy(warnings);
+    if (h.unresolved.length > 0) console.warn(`[App] 区域を特定できなかった警報: ${h.unresolved.length}件`, h.unresolved);
+    return h;
+  }, [warnings]);
 
-      if (!groupedWarningsMap.has(key)) {
-          groupedWarningsMap.set(key, { 
-              area: key, 
-              prefecture: w.prefecture, 
-              reportDateTime: w.reportDateTime, 
-              items: [w] 
-          });
-      } else {
-          const existing = groupedWarningsMap.get(key);
-          if (new Date(w.reportDateTime) > new Date(existing.reportDateTime)) {
-              existing.reportDateTime = w.reportDateTime;
-          }
-          if (!existing.items.find((i: any) => i.warningName === w.warningName)) {
-              existing.items.push(w);
-          }
-      }
-  }
-
-  const PREFECTURES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+  // 画面遷移（ブラウザの戻る/進むにも対応）
+  const navigate = (mode: 'class10' | 'class15' | 'municipality', c10: string | null, c15: string | null, push = true) => {
+    setViewMode(mode);
+    setSelectedClass10(c10);
+    setSelectedClass15(c15);
+    if (push) window.history.pushState({ mode, class10: c10, class15: c15 }, '');
+  };
 
   const handleBack = () => {
-    if (viewMode === 'municipality') {
-      if (selectedClass15) {
-        setViewMode('class15');
-        setSelectedClass15(null);
-      } else {
-        setViewMode('class10');
-        setSelectedClass10(null);
-      }
-      if (window.history.state?.mode) window.history.back();
-    } else if (viewMode === 'class15') {
-      setViewMode('class10');
-      setSelectedClass10(null);
-      if (window.history.state?.mode) window.history.back();
-    }
+    if (viewMode === 'municipality') navigate('class15', selectedClass10, null);
+    else if (viewMode === 'class15') navigate('class10', null, null);
   };
 
   useEffect(() => {
-    if (viewMode !== 'class10' && window.history.state?.mode !== viewMode) {
-      window.history.pushState({ mode: viewMode, class10: selectedClass10, class15: selectedClass15 }, '');
-    }
-  }, [viewMode, selectedClass10, selectedClass15]);
-
-  useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
-      if (e.state && e.state.mode) {
-        setViewMode(e.state.mode);
-        setSelectedClass10(e.state.class10);
-        setSelectedClass15(e.state.class15);
-      } else {
-        setViewMode('class10');
-        setSelectedClass10(null);
-        setSelectedClass15(null);
-      }
+      if (e.state && e.state.mode) navigate(e.state.mode, e.state.class10, e.state.class15, false);
+      else navigate('class10', null, null, false);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -280,23 +238,39 @@ export default function App() {
           <div>
             {activeTab === 'warnings' && (
               <div style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                {viewMode !== 'class10' ? (
-                  <>
-                    <button 
-                      onClick={handleBack}
-                      style={{ padding: '4px 12px', backgroundColor: '#475569', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
-                    >
-                      ← {viewMode === 'municipality' ? '二次細分区域に戻る' : '一次細分区域に戻る'}
-                    </button>
-                    <span style={{ fontSize: '0.875rem', color: '#475569', backgroundColor: '#e0e7ff', padding: '4px 10px', borderRadius: '4px', fontWeight: 600 }}>
-                      {viewMode === 'municipality' ? selectedClass15 : selectedClass10} の気象警報・注意報
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: "0.875rem", color: "#475569", fontWeight: 600 }}>全国の気象警報・注意報</span>
-                  </>
+                {viewMode !== 'class10' && (
+                  <button
+                    id="warnings-back-button"
+                    onClick={handleBack}
+                    style={{ padding: '4px 12px', backgroundColor: '#475569', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                  >
+                    ← 戻る
+                  </button>
                 )}
+                {/* パンくず: 全国 > 府県予報区 > 一次細分区域 > 二次細分区域 */}
+                <nav aria-label="区域階層" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.875rem', fontWeight: 600, flexWrap: 'wrap' }}>
+                  {(() => {
+                    const crumbStyle = (active: boolean): React.CSSProperties => ({
+                      background: 'none', border: 'none', padding: 0, fontWeight: 600, fontSize: '0.875rem',
+                      color: active ? '#1e293b' : '#2563eb', cursor: active ? 'default' : 'pointer',
+                      textDecoration: active ? 'none' : 'underline', textUnderlineOffset: '3px',
+                    });
+                    const sep = <span style={{ color: '#94a3b8' }}>›</span>;
+                    const c10 = selectedClass10;
+                    return (
+                      <>
+                        <button id="crumb-national" style={crumbStyle(viewMode === 'class10')} onClick={() => viewMode !== 'class10' && navigate('class10', null, null)}>全国</button>
+                        {c10 && <>{sep}<span style={{ color: '#475569' }}>{areaName.pref(areaName.prefOf10(c10))}</span></>}
+                        {c10 && <>{sep}<button id="crumb-class10" style={crumbStyle(viewMode === 'class15')} onClick={() => viewMode !== 'class15' && navigate('class15', c10, null)}>{areaName.class10(c10)}</button></>}
+                        {selectedClass15 && <>{sep}<span style={{ color: '#1e293b' }}>{areaName.class15(selectedClass15)}</span></>}
+                        <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>
+                          {viewMode === 'class10' ? '一次細分区域' : viewMode === 'class15' ? '二次細分区域' : '市町村'}ごとの気象警報・注意報
+                        </span>
+                      </>
+                    );
+                  })()}
+                </nav>
+
               </div>
             )}
 
@@ -331,141 +305,86 @@ export default function App() {
                 </thead>
                 <tbody>
                   {activeTab === 'warnings' && (() => {
-                    const items = Object.values(Object.fromEntries(groupedWarningsMap)).sort((a: any, b: any) => {
-                      return new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime();
-                    });
-
-                    if (viewMode === 'class10') {
-                      const prefGroups: Record<string, any[]> = {};
-                      PREFECTURES.forEach(p => prefGroups[p] = []);
-                      
-                      items.forEach((row: any) => {
-                        const pref = row.prefecture || 'その他';
-                        if (!prefGroups[pref]) prefGroups[pref] = [];
-                        prefGroups[pref].push(row);
-                      });
-                      
-                      return (
-                        <>
-                          {PREFECTURES.concat(['その他']).map(pref => {
-                            const regions = prefGroups[pref];
-                            if (!regions || regions.length === 0) return null;
-                            
-                            regions.sort((a: any, b: any) => new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime());
-                            
-                            return (
-                              <React.Fragment key={pref}>
-                                {/* 都道府県見出し */}
-                                <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
-                                  <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
-                                    {pref}
-                                  </td>
-                                </tr>
-                                
-                                {/* 一次細分区域のリスト */}
-                                {regions.map((row: any, i: number) => (
-                                  <tr 
-                                    key={row.area + '-' + i} 
-                                    className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f1f5f9')}
-                                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                                  >
-                                    <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
-                                    <td 
-                                      style={{
-                                        padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
-                                        cursor: 'pointer',
-                                        textDecoration: 'underline',
-                                        textDecorationColor: '#93c5fd',
-                                        textUnderlineOffset: '4px'
-                                      }}
-                                      onClick={() => {
-                                        setSelectedClass10(row.area);
-                                        setViewMode('class15');
-                                      }}
-                                    >
-                                      {row.area} <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>
-                                    </td>
-                                    <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                        {row.items
-                                          .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
-                                          .map((w: any, idx: number) => {
-                                            const displayName = formatWarningName(w.warningName);
-                                            return (
-                                              <span key={idx} style={{
-                                                padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                                                whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                                ...getWarningColor(w.warningLevel)
-                                              }}>
-                                                {displayName}
-                                              </span>
-                                            );
-                                          })}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </React.Fragment>
-                            );
-                          })}
-                        </>
-                      );
-                    } else {
-                      return (
-                        <>
-                          {items.length === 0 && (
-                            <tr><td colSpan={3} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>現在発表されている警報・注意報はありません</td></tr>
-                          )}
-                          {items.map((row: any, i: number) => (
-                            <tr key={row.area + '-' + i} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                              >
-                                <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
-                                <td 
-                                  style={{
-                                    padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
-                                    cursor: viewMode === 'class15' ? 'pointer' : 'default',
-                                    textDecoration: viewMode === 'class15' ? 'underline' : 'none',
-                                    textDecorationColor: '#93c5fd',
-                                    textUnderlineOffset: '4px'
-                                  }}
-                                  onClick={() => {
-                                    if (viewMode === 'class15') {
-                                      setSelectedClass15(row.area);
-                                      setViewMode('municipality');
-                                    }
-                                  }}
-                                >
-                                  {row.area} 
-                                  {viewMode === 'class15' && <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '4px', color: '#94a3b8' }}></i>}
-                                </td>
-                                <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {row.items
-                                      .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
-                                      .map((w: any, idx: number) => {
-                                        const displayName = formatWarningName(w.warningName);
-                                        return (
-                                          <span key={idx} style={{
-                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                                            whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                            ...getWarningColor(w.warningLevel)
-                                          }}>
-                                            {displayName}
-                                          </span>
-                                        );
-                                      })}
-                                  </div>
-                                </td>
-                            </tr>
+                    const badges = (n?: AreaNode) => (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {!n || n.warnings.length === 0 ? (
+                          <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>発表なし</span>
+                        ) : [...n.warnings]
+                          .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
+                          .map((w: any, idx: number) => (
+                            <span key={idx} style={{
+                              padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                              whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              ...getWarningColor(w.warningLevel)
+                            }}>
+                              {formatWarningName(w.warningName)}
+                            </span>
                           ))}
-                        </>
+                      </div>
+                    );
+                    const row = (id: string, name: string, n: AreaNode | undefined, onClick?: () => void) => (
+                      <tr key={id} id={`area-row-${id}`} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9', opacity: n ? 1 : 0.6 }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f1f5f9')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                      >
+                        <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          {n?.latest ? new Date(n.latest).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: !use24HourFormat }) : '—'}
+                        </td>
+                        <td
+                          style={{
+                            padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
+                            cursor: onClick ? 'pointer' : 'default',
+                            textDecoration: onClick ? 'underline' : 'none',
+                            textDecorationColor: '#93c5fd', textUnderlineOffset: '4px'
+                          }}
+                          onClick={onClick}
+                        >
+                          {name}
+                          {onClick && <i className="fa-solid fa-chevron-right" style={{ fontSize: '0.7rem', marginLeft: '6px', color: '#94a3b8' }}></i>}
+                        </td>
+                        <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>{badges(n)}</td>
+                      </tr>
+                    );
+                    const empty = (msg: string) => (
+                      <tr><td colSpan={3} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>{msg}</td></tr>
+                    );
+
+                    // 階層1: 都道府県を見出しに、警報・注意報が発表されている一次細分区域を一覧
+                    if (viewMode === 'class10') {
+                      const prefs = sortedPrefCodes(hierarchy);
+                      if (prefs.length === 0) return empty(loading ? '読み込み中...' : '現在発表されている警報・注意報はありません');
+                      return prefs.map(pc => {
+                        const o = hierarchy.prefs.get(pc)!;
+                        return (
+                          <React.Fragment key={pc}>
+                            <tr id={`pref-heading-${pc}`} style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+                              <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>{o.name}</td>
+                            </tr>
+                            {o.children.filter(c => hierarchy.class10s.has(c)).map(c10 =>
+                              row(c10, areaName.class10(c10), hierarchy.class10s.get(c10), () => navigate('class15', c10, null))
+                            )}
+                          </React.Fragment>
+                        );
+                      });
+                    }
+
+                    // 階層2: 選択した一次細分区域内の全二次細分区域
+                    if (viewMode === 'class15' && selectedClass10) {
+                      const n10 = hierarchy.class10s.get(selectedClass10);
+                      if (!n10) return empty('この区域に発表中の警報・注意報はありません');
+                      return n10.children.map(c15 =>
+                        row(c15, areaName.class15(c15), hierarchy.class15s.get(c15), () => navigate('municipality', selectedClass10, c15))
                       );
                     }
+
+                    // 階層3: 選択した二次細分区域内の全市町村
+                    if (viewMode === 'municipality' && selectedClass15) {
+                      const n15 = hierarchy.class15s.get(selectedClass15);
+                      if (!n15) return empty('この区域に発表中の警報・注意報はありません');
+                      return n15.children.map(c20 => row(c20, areaName.class20(c20), hierarchy.class20s.get(c20)));
+                    }
+                    return null;
                   })()}
                   {activeTab === 'earthquakes' && [...earthquakes]
                     .sort((a, b) => new Date(b.originTime).getTime() - new Date(a.originTime).getTime())

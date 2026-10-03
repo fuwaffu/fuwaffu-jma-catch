@@ -671,6 +671,8 @@ export default {
           }
         
           const kinds = Array.isArray(item.Kind) ? item.Kind : (item.Kind ? [item.Kind] : []);
+          const areaCode = area.Code ? String(area.Code) : '';
+          const activeNames = new Set<string>(); // この電文で有効として列挙された種別
           
           for (const kind of kinds) {
             if (!kind) continue;
@@ -747,6 +749,7 @@ export default {
             }
 
           // 2. 「発表」またはそれ以外の場合：DB(配列)に追加
+          activeNames.add(wName);
           // 同じ警報が既にある場合は重複を防ぐため削除してから追加する
           let existingIndex = -1;
           for (let i = warningsData.length - 1; i >= 0; i--) {
@@ -765,13 +768,26 @@ export default {
             }
             
             // 既存データを更新 (解除フラグを落とす)
-            warningsData[existingIndex] = { ...warningsData[existingIndex], xmlId, reportDateTime, warningCode: kindCode || '', warningLevel: level, infoType, status, class10, class15, isCancelled: false };
+            warningsData[existingIndex] = { ...warningsData[existingIndex], xmlId, reportDateTime, warningCode: kindCode || '', warningLevel: level, infoType, status, class10, class15, areaCode, isCancelled: false };
           } else {
             warningsData.push({
-              xmlId, reportDateTime, region: finalMuni, prefecture: finalPref, areaType, class10, class15,
+              xmlId, reportDateTime, region: finalMuni, prefecture: finalPref, areaType, class10, class15, areaCode,
               warningCode: kindCode || '', warningName: wName, warningLevel: level, infoType, status, isCancelled: false
             });
           }
+          }
+
+          // 3. 気象庁XMLは区域ごとに現在有効な全種別を列挙するため、列挙されなかった既存種別は解除扱いとする
+          //    （例: 注意報→警報への切替時に古い注意報が残り続けるのを防ぐ）
+          const newTime = new Date(reportDateTime).getTime();
+          for (const w of warningsData) {
+            if (w.isCancelled || w.areaType !== areaType || w.region !== region) continue;
+            if (w.prefecture !== finalPref && w.prefecture !== prefecture) continue;
+            if (activeNames.has(w.warningName)) continue;
+            if (new Date(w.reportDateTime).getTime() <= newTime) {
+              w.isCancelled = true;
+              w.reportDateTime = reportDateTime;
+            }
           }
         }
       }
