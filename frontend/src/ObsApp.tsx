@@ -183,10 +183,25 @@ export default function ObsApp() {
       });
     }
     
-    // 生成した四角形の範囲に対して、外側15%を余白として確保する計算ロジック
-    // bounds.pad(0.15) はバウンズの縦横の幅の15%分を外側に拡張します
-    const paddedBounds = bounds.isValid() ? bounds.pad(0.15) : bounds;
-    map.fitBounds(paddedBounds, { padding: [0, 0], maxZoom: 6 });
+    // 生成した四角形の上限・下限位置(縦幅)を取り、外側8%を高さの余白として確保
+    if (bounds.isValid()) {
+      const south = bounds.getSouth();
+      const north = bounds.getNorth();
+      const east = bounds.getEast();
+      const west = bounds.getWest();
+      
+      const dLat = north - south;
+      const padLat = dLat * 0.08; // 縦幅の8%
+      
+      // 横幅についてはそのままか、アスペクト比で自然に決まる
+      const newBounds = L.latLngBounds(
+        [south - padLat, west],
+        [north + padLat, east]
+      );
+      map.fitBounds(newBounds, { padding: [0, 0], maxZoom: 6 });
+    } else {
+      map.fitBounds(bounds, { padding: [0, 0], maxZoom: 6 });
+    }
 
   }, [activeTyphoon, use24HourFormat]);
 
