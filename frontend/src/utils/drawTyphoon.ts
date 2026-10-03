@@ -154,17 +154,24 @@ export function drawTyphoon(
     }
   });
 
-  // Collision helper
+  // Collision helper (checks all circles)
   const checkCollision = (lLat: number, lLon: number) => {
     let maxDist = 0;
-    if (curGaleCircle && curGaleCircle.radius > 0) {
-      const dG = Math.sqrt(Math.pow((lLat - curGaleCircle.lat) * 111, 2) + Math.pow((lLon - curGaleCircle.lon) * 111 * Math.cos((curGaleCircle.lat + lLat) / 2 * Math.PI / 180), 2));
-      if (dG < curGaleCircle.radius + 60) maxDist = curGaleCircle.radius + 60 - dG;
-    }
-    if (curStormCircle && curStormCircle.radius > 0) {
-      const dS = Math.sqrt(Math.pow((lLat - curStormCircle.lat) * 111, 2) + Math.pow((lLon - curStormCircle.lon) * 111 * Math.cos((curStormCircle.lat + lLat) / 2 * Math.PI / 180), 2));
-      if (dS < curStormCircle.radius + 60) maxDist = Math.max(maxDist, curStormCircle.radius + 60 - dS);
-    }
+    const checkCircle = (cLat: number, cLon: number, cRadius: number) => {
+      if (cRadius <= 0) return;
+      const d = Math.sqrt(Math.pow((lLat - cLat) * 111, 2) + Math.pow((lLon - cLon) * 111 * Math.cos((cLat + lLat) / 2 * Math.PI / 180), 2));
+      if (d < cRadius + 140) maxDist = Math.max(maxDist, cRadius + 140 - d);
+    };
+
+    if (curGaleCircle) checkCircle(curGaleCircle.lat, curGaleCircle.lon, curGaleCircle.radius);
+    if (curStormCircle) checkCircle(curStormCircle.lat, curStormCircle.lon, curStormCircle.radius);
+    
+    forecasts.forEach((f: any) => {
+      if (f.circleRadiusKm > 0) checkCircle(f.lat, f.lon, f.circleRadiusKm);
+      const fStorm = getTrueCircleFromRadii(f.lat, f.lon, f.stormRadii);
+      if (fStorm && fStorm.radius > 0) checkCircle(fStorm.lat, fStorm.lon, fStorm.radius);
+    });
+    
     return maxDist > 0;
   };
 
@@ -204,7 +211,7 @@ export function drawTyphoon(
 
       // ラベル
       const timeLabel = formatForecastTime(fc.dateTime);
-      const angle = (idx % 2 === 0) ? -45 : 135; 
+      const angle = (idx % 2 === 0) ? -90 : 90; // Left or Right
       let labelOffsetKm = (fc.circleRadiusKm || 50) + (isObs ? 160 : 90); 
       const rad = angle * Math.PI / 180;
       let labelLat = fc.lat + (labelOffsetKm / 111) * Math.cos(rad);
@@ -212,7 +219,7 @@ export function drawTyphoon(
 
       let attempts = 0;
       while (checkCollision(labelLat, labelLon) && attempts < 30) {
-        labelOffsetKm += 40;
+        labelOffsetKm += 50;
         labelLat = fc.lat + (labelOffsetKm / 111) * Math.cos(rad);
         labelLon = fc.lon + (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
         attempts++;
@@ -237,12 +244,12 @@ export function drawTyphoon(
   addStep(0, () => {
     const curTimeLabel = formatForecastTime(cur.dateTime);
     let curLabelOffsetKm = 60;
-    const curRad = -135 * Math.PI / 180;
+    const curRad = -90 * Math.PI / 180; // Left
     let curLabelLat = lat + (curLabelOffsetKm / 111) * Math.cos(curRad);
     let curLabelLon = lon + (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
     let attempts = 0;
     while (checkCollision(curLabelLat, curLabelLon) && attempts < 30) {
-      curLabelOffsetKm += 40;
+      curLabelOffsetKm += 50;
       curLabelLat = lat + (curLabelOffsetKm / 111) * Math.cos(curRad);
       curLabelLon = lon + (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
       attempts++;
@@ -281,7 +288,7 @@ export function drawTyphoon(
       } else {
         setTimeout(() => {
           steps[i].forEach(fn => fn());
-        }, i * 600); // 600ms per step
+        }, i * 350); // 350ms per step
       }
     }
   } else {

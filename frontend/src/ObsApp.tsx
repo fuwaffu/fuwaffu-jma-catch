@@ -177,12 +177,12 @@ export default function ObsApp() {
     }
 
     // OBSは1920x1080なので広めにパディング、かつ寄りすぎないよう最大ズームを6に制限
-    map.fitBounds(bounds, { padding: [110, 110], maxZoom: 6 });
+    map.fitBounds(bounds, { padding: [54, 54], maxZoom: 6 });
 
   }, [activeTyphoon, use24HourFormat]);
 
   if (loading) {
-    return <div style={{ color: '#fff', padding: '20px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif" }}>読み込み中...</div>;
+    return <div style={{ color: '#fff', padding: '20px', fontFamily: "'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif", animation: 'fadeInSlide 0.8s ease-out forwards' }}>読み込み中...</div>;
   }
 
   if (!activeTyphoon) {
