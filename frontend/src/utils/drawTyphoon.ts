@@ -155,7 +155,14 @@ export function drawTyphoon(
   });
 
   // Collision helper (checks all circles)
+  const placedLabels: {lat: number, lon: number}[] = [];
   const checkCollision = (lLat: number, lLon: number) => {
+    let hasCollision = false;
+    for (const pl of placedLabels) {
+      const d = Math.sqrt(Math.pow((lLat - pl.lat) * 111, 2) + Math.pow((lLon - pl.lon) * 111 * Math.cos((pl.lat + lLat) / 2 * Math.PI / 180), 2));
+      if (d < 100) hasCollision = true;
+    }
+    
     let maxDist = 0;
     const checkCircle = (cLat: number, cLon: number, cRadius: number) => {
       if (cRadius <= 0) return;
@@ -172,7 +179,7 @@ export function drawTyphoon(
       if (fStorm && fStorm.radius > 0) checkCircle(fStorm.lat, fStorm.lon, fStorm.radius);
     });
     
-    return maxDist > 0;
+    return hasCollision || maxDist > 0;
   };
 
   // 4. 各予報円とマーカーの描画
@@ -234,12 +241,13 @@ export function drawTyphoon(
         attempts++;
       }
 
+      placedLabels.push({lat: labelLat, lon: labelLon});
       L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
         color: isObs ? '#e2e8f0' : '#666', weight: isObs ? 2 : 1.5, opacity: 0.8, dashArray: isObs ? '4,4' : '2,2', className: isObs ? 'obs-fade-in' : ''
       }).addTo(map);
 
       const html = isObs 
-        ? `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:2px solid #999;border-radius:6px;padding:4px 10px;font-size:16px;font-weight:700;color:#333;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`
+        ? `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:2px solid #999;border-radius:6px;padding:3px 7px;font-size:12px;font-weight:700;color:#333;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`
         : `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`;
 
       L.marker([labelLat, labelLon], { 
@@ -269,10 +277,11 @@ export function drawTyphoon(
       attempts++;
     }
 
+    placedLabels.push({lat: curLabelLat, lon: curLabelLon});
     L.polyline([[lat, lon], [curLabelLat, curLabelLon]], { color: '#FF2800', weight: 1.5, opacity: 0.8, dashArray: '2,2' }).addTo(map);
 
     const curHtml = isObs
-      ? `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:2px solid #FF2800;border-radius:6px;padding:4px 10px;font-size:16px;font-weight:700;color:#FF2800;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`
+      ? `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:2px solid #FF2800;border-radius:6px;padding:3px 7px;font-size:12px;font-weight:700;color:#FF2800;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.2); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`
       : `<div style="font-family: 'Zen Kaku Gothic Paren', 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`;
 
     L.marker([curLabelLat, curLabelLon], { 
