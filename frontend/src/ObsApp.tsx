@@ -146,8 +146,7 @@ export default function ObsApp() {
     const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
       if (!points || points.length <= 1) return [];
       
-      const leftPoints: [number, number][] = [];
-      const rightPoints: [number, number][] = [];
+      const segments: [number, number][][] = [];
       
       const getDistAndAngle = (p1: any, p2: any) => {
         const dLat = (p2.lat - p1.lat) * 111;
@@ -176,30 +175,15 @@ export default function ObsApp() {
         const a1 = angle + Math.PI / 2 + theta;
         const a2 = angle - Math.PI / 2 - theta;
 
-        leftPoints.push(toLatLng(p1, a1));
-        if (i === points.length - 2) leftPoints.push(toLatLng(p2, a1));
-
-        rightPoints.push(toLatLng(p1, a2));
-        if (i === points.length - 2) rightPoints.push(toLatLng(p2, a2));
+        segments.push([toLatLng(p1, a1), toLatLng(p2, a1)]);
+        segments.push([toLatLng(p1, a2), toLatLng(p2, a2)]);
       }
       
-      return [leftPoints, rightPoints];
+      return segments;
     };
 
     // 白色の予報円（扇形外枠のみ）
-    const forecastPoints: { lat: number, lon: number, r: number }[] = [];
-    if (forecasts.length > 0) {
-      forecastPoints.push({ lat, lon, r: 0 }); // start point
-      let lastTime = 0;
-      for (const f of forecasts) {
-        const time = new Date(f.dateTime).getTime();
-        if (lastTime > 0 && time - lastTime < 12 * 3600 * 1000) {
-          continue; 
-        }
-        forecastPoints.push({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 });
-        lastTime = time;
-      }
-    }
+    const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
       L.polyline(forecastPolygon, { color: '#ffffff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
@@ -315,16 +299,10 @@ export default function ObsApp() {
 
     const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
     const stormPointsRaw = [curStormRaw];
-    let lastTimeStorm = 0;
     for (const f of forecasts) {
       const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
-      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
-      
-      const time = new Date(f.dateTime).getTime();
-      if (lastTimeStorm > 0 && time - lastTimeStorm < 12 * 3600 * 1000) continue;
-      
       stormPointsRaw.push(p);
-      lastTimeStorm = time;
+      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
     }
     
     const stormPolygon = getOuterTangentPolygon(stormPointsRaw);

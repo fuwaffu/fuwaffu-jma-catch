@@ -536,8 +536,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
       if (!points || points.length <= 1) return [];
       
-      const leftPoints: [number, number][] = [];
-      const rightPoints: [number, number][] = [];
+      const segments: [number, number][][] = [];
       
       const getDistAndAngle = (p1: any, p2: any) => {
         const dLat = (p2.lat - p1.lat) * 111;
@@ -566,17 +565,14 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         const a1 = angle + Math.PI / 2 + theta;
         const a2 = angle - Math.PI / 2 - theta;
 
-        leftPoints.push(toLatLng(p1, a1));
-        if (i === points.length - 2) leftPoints.push(toLatLng(p2, a1));
-
-        rightPoints.push(toLatLng(p1, a2));
-        if (i === points.length - 2) rightPoints.push(toLatLng(p2, a2));
+        segments.push([toLatLng(p1, a1), toLatLng(p2, a1)]);
+        segments.push([toLatLng(p1, a2), toLatLng(p2, a2)]);
       }
       
-      return [leftPoints, rightPoints];
+      return segments;
     };
 
-    // 白色の予報円（Cone of uncertainty）
+    // 白色の予報円（扇形外枠のみ）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
