@@ -906,36 +906,43 @@ function InfoCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-// 警報レベルの優先順位
-function getWarningPriority(level: string): number {
-  if (level === 'level_5' || level === 'special') return 1;
-  if (level === 'level_4') return 2;
-  if (level === 'level_3' || level === 'warning') return 3;
-  if (level === 'level_2' || level === 'advisory') return 4;
-  return 5;
-}
-
-// 警報名フォーマット
+// 警報名の表示フォーマット（全角数字→半角数字変換とスペース挿入）
 function formatWarningName(name: string): string {
-  if (!name) return '';
-  return name.replace(/^レベル\d+\s*/, '');
+  const match = name.match(/^レベル([１-５1-5])(.+)$/);
+  if (match) {
+    const numMap: Record<string, string> = { '１':'1', '２':'2', '３':'3', '４':'4', '５':'5' };
+    const halfNum = numMap[match[1]] || match[1];
+    return `レベル${halfNum} ${match[2]}`;
+  }
+  return name;
 }
 
-// 警報カラー
+// 警戒レベル表示の優先度（高い方が先に表示）
+function getWarningPriority(level: string): number {
+  switch (level) {
+    case 'level_5': case 'special': return 0;
+    case 'level_4': return 1;
+    case 'level_3': case 'warning': return 2;
+    case 'level_2': case 'advisory': return 3;
+    default: return 4;
+  }
+}
+
+// 警戒レベルに応じた色分け（気象庁標準カラーに完全準拠）
 function getWarningColor(level: string): React.CSSProperties {
   switch (level) {
     case 'level_5':
     case 'special':
-      return { backgroundColor: '#7e22ce', color: '#ffffff' };
+      return { backgroundColor: '#1e003b', color: '#ffffff' }; // レベル5 (特別警報): 黒紫
     case 'level_4':
-      return { backgroundColor: '#dc2626', color: '#ffffff' };
+      return { backgroundColor: '#800080', color: '#ffffff' }; // レベル4 (警報・土砂災害・高潮): 紫
     case 'level_3':
     case 'warning':
-      return { backgroundColor: '#ea580c', color: '#ffffff' };
+      return { backgroundColor: '#ff2800', color: '#ffffff' }; // レベル3 (警報): 赤
     case 'level_2':
     case 'advisory':
-      return { backgroundColor: '#eab308', color: '#000000' };
+      return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2 (注意報): 黄
     default:
-      return { backgroundColor: '#64748b', color: '#ffffff' };
+      return { backgroundColor: '#f3f4f6', color: '#333333' };
   }
 }
