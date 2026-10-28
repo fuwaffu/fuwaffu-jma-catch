@@ -482,7 +482,7 @@ export default function App() {
                     </tr>
                   )}
                 </thead>
-                <tbody>
+                <tbody key={`${activeTab}-${viewMode}-${selectedParentArea || ''}-${quakeSortMode}`}>
                   {activeTab === 'warnings' && (() => {
                     const PREF_CATEGORY_MAP: Record<string, string[]> = {
                       "北海道": [
@@ -522,11 +522,14 @@ export default function App() {
                       warningsByCategory[cat].push(row);
                     });
 
+                    let flapRowCounter = 0;
+
                     return CATEGORY_ORDER.map(cat => {
                       if (!warningsByCategory[cat] || warningsByCategory[cat].length === 0) return null;
+                      const catDelay = Math.min(flapRowCounter++ * 22, 350);
                       return (
                         <React.Fragment key={cat}>
-                          <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+                          <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', animationDelay: `${catDelay}ms` }}>
                             <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>{cat}</td>
                           </tr>
                           {Object.entries(
@@ -539,14 +542,16 @@ export default function App() {
                           ).map(([pref, rows]: [string, any]) => (
                             <React.Fragment key={pref}>
                               {(viewMode === 'prefecture' || viewMode === 'region') && pref !== cat && (
-                                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <tr className="split-flap-row" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', animationDelay: `${Math.min(flapRowCounter++ * 22, 350)}ms` }}>
                                   <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem' }}>
                                     {pref}
                                   </td>
                                 </tr>
                               )}
-                              {rows.map((row: any, index: number) => (
-                                <tr key={row.area || index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
+                              {rows.map((row: any, index: number) => {
+                                const rowDelay = Math.min(flapRowCounter++ * 22, 350);
+                                return (
+                                <tr key={row.area || index} className="split-flap-row fade-update" style={{ borderBottom: '1px solid #f1f5f9', animationDelay: `${rowDelay}ms` }}
                                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                                 >
@@ -588,7 +593,8 @@ export default function App() {
                                     </div>
                                   </td>
                                 </tr>
-                              ))}
+                              );
+                              })}
                             </React.Fragment>
                           ))}
                         </React.Fragment>
@@ -607,17 +613,19 @@ export default function App() {
                         byRegion[r].push(eq);
                       });
 
-                      return REGIONS.map(reg => {
+                      let eqRegCounter = 0;
+                      return REGIONS.map((reg) => {
                         const list = byRegion[reg];
                         if (!list || list.length === 0) return null;
+                        const headerDelay = Math.min(eqRegCounter++ * 25, 350);
                         return (
                           <React.Fragment key={reg}>
-                            <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+                            <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', animationDelay: `${headerDelay}ms` }}>
                               <td colSpan={4} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
                                 📍 {reg} ({list.length}件)
                               </td>
                             </tr>
-                            {list.map((eq, index) => renderEarthquakeRow(eq, index))}
+                            {list.map((eq) => renderEarthquakeRow(eq, eqRegCounter++))}
                           </React.Fragment>
                         );
                       });
@@ -646,11 +654,12 @@ export default function App() {
                     const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
                     const displayName = `台風${typhoonNum}号（${ty.name}）`;
                     const intensityText = [ty.current?.intensityClass, ty.current?.areaClass].filter(Boolean).join(' / ') || '—';
+                    const delay = Math.min(index * 25, 350);
                     return (
                       <tr 
                         key={ty.tcNumber || index} 
-                        className="slide-in-row fade-update" 
-                        style={{ borderBottom: '1px solid #f1f5f9' }}
+                        className="split-flap-row fade-update" 
+                        style={{ borderBottom: '1px solid #f1f5f9', animationDelay: `${delay}ms` }}
                         onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                       >
@@ -716,11 +725,12 @@ export default function App() {
     const formattedIntensity = formatIntensity(eq.maxIntensity);
     const regionName = getRegionFromHypocenter(eq.hypocenterName);
 
+    const delay = Math.min(index * 22, 350);
     return (
       <tr
         key={eq.xmlId || eq.eventId || index}
-        className="slide-in-row fade-update"
-        style={{ borderBottom: '1px solid #f1f5f9' }}
+        className="split-flap-row fade-update"
+        style={{ borderBottom: '1px solid #f1f5f9', animationDelay: `${delay}ms` }}
         onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       >

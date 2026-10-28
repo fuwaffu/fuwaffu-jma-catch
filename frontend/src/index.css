@@ -25,6 +25,46 @@ body {
   animation: slideIn 0.3s ease-out forwards;
 }
 
+/* 反転フラップ式案内表示機（スプリットフラップ）風アニメーション */
+@keyframes splitFlapRow {
+  0% {
+    transform: perspective(900px) rotateX(-85deg);
+    opacity: 0;
+    filter: brightness(0.65);
+  }
+  60% {
+    transform: perspective(900px) rotateX(12deg);
+    opacity: 0.95;
+    filter: brightness(1.08);
+  }
+  80% {
+    transform: perspective(900px) rotateX(-4deg);
+    filter: brightness(0.97);
+  }
+  100% {
+    transform: perspective(900px) rotateX(0deg);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.split-flap-row {
+  display: table-row;
+  transform-origin: 50% 0%;
+  animation: splitFlapRow 0.34s cubic-bezier(0.22, 1, 0.36, 1.1) both;
+  backface-visibility: hidden;
+  will-change: transform, opacity, filter;
+}
+
 .fade-update {
   transition: background-color 0.5s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .split-flap-row {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+  }
 }
