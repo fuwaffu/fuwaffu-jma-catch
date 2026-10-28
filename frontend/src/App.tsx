@@ -2,13 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import EarthquakeDetailView, { formatIntensity, getSeismicIntensityColor } from './EarthquakeDetailView';
-import {
-  getOuterTangentPolygon,
-  getTrueCircleFromRadii,
-  drawPastTrack,
-  drawStormWarningArea,
-  getTyphoonAllTrackPoints,
-} from './typhoonMap';
+import { drawTyphoon } from './utils/drawTyphoon';
 
 const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 const EXPIRE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
@@ -52,7 +46,13 @@ export default function App() {
       }
 
       setWarnings(await warningsRes.json());
-      setEarthquakes(await earthquakesRes.json());
+      const eqData = await earthquakesRes.json();
+      setEarthquakes(eqData);
+      setSelectedEarthquake((prev: any) => {
+        if (!prev) return null;
+        const updated = eqData.find((eq: any) => (prev.eventId && eq.eventId === prev.eventId) || eq.xmlId === prev.xmlId || eq.originTime === prev.originTime);
+        return updated || prev;
+      });
       const rawTyphoons = await typhoonsRes.json();
       const now = Date.now();
       const activeTyphoons = Array.isArray(rawTyphoons) ? rawTyphoons.filter((t: any) => {
@@ -561,7 +561,6 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
   const displayName = `台風${typhoonNum}号（${typhoon.name}）`;
   const cur = typhoon.current || {};
 
-  // 時刻フォーマッター
   const formatForecastTime = (isoStr: string): string => {
     if (!isoStr) return '';
     try {
@@ -569,19 +568,13 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       if (isNaN(d.getTime())) return isoStr;
       const day = d.getDate();
       const hour = d.getHours();
-      
-      if (use24HourFormat) {
-        return `${day}日${hour}時`;
-      } else {
-        if (hour === 0) return `${day}日午前0時`;
-        if (hour < 12) return `${day}日午前${hour}時`;
-        if (hour === 12) return `${day}日午後0時`;
-        return `${day}日午後${hour - 12}時`;
-      }
+      if (use24HourFormat) return `${day}日${hour}時`;
+      if (hour === 0) return `${day}日午前0時`;
+      if (hour < 12) return `${day}日午前${hour}時`;
+      if (hour === 12) return `${day}日午後0時`;
+      return `${day}日午後${hour - 12}時`;
     } catch { return isoStr; }
   };
-  
-
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -589,125 +582,44 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const lat = cur.lat || 30;
     const lon = cur.lon || 135;
     const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
+    map.createPane('bgPane');
+    map.getPane('bgPane')!.style.zIndex = '200';
     mapInstanceRef.current = map;
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-      maxZoom: 16
-    }).addTo(mapInstanceRef.current);
+    const targetMap = mapInstanceRef.current;
+    if (targetMap) {
+      fetch('/world_50m.geojson')
+        .then(res => res.json())
+        .then(data => {
+          if (!mapInstanceRef.current) return;
+          const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
+          const bgLayer = L.geoJSON(data, { style, pane: 'bgPane' });
+          (bgLayer as any).isBaseMap = true;
+          bgLayer.eachLayer((l: any) => (l.isBaseMap = true));
+          bgLayer.addTo(targetMap);
 
-    // 台風マーカー（現在位置）を「×」印に
-    const typhoonIcon = L.divIcon({
-      html: '<div style="font-size:24px;text-align:center;line-height:1;color:#FF2800;font-weight:bold;text-shadow:1px 1px 0 #fff,-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff;">×</div>',
-      iconSize: [24, 24], iconAnchor: [12, 12], className: '',
-    });
-    L.marker([lat, lon], { icon: typhoonIcon }).addTo(map)
-      .bindPopup(`<b>${displayName}</b><br>${cur.location || ''}<br>${cur.pressure}hPa / 最大風速${cur.maxWind}m/s`);
-
-    // 予報円をつなぐ「予報円の接線を結んだ領域（扇形/コーン）」を描画
-    const forecasts = typhoon.forecasts || [];
-    const trackPoints: [number, number][] = [[lat, lon]];
-    
-    // 白色の予報円（Cone of uncertainty）
-    const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
-    const forecastPolygon = getOuterTangentPolygon(forecastPoints);
-    if (forecastPolygon.length > 0) {
-      L.polygon(forecastPolygon, { color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
+          // 経度180度での切れ目防止
+          const shiftedData = JSON.parse(JSON.stringify(data));
+          shiftedData.features.forEach((f: any) => {
+            if (f.geometry) {
+              const shiftCoords = (coords: any[]) => {
+                if (typeof coords[0] === 'number') coords[0] += 360;
+                else coords.forEach(shiftCoords);
+              };
+              shiftCoords(f.geometry.coordinates);
+            }
+          });
+          const bgLayerRight = L.geoJSON(shiftedData, { style, pane: 'bgPane' });
+          (bgLayerRight as any).isBaseMap = true;
+          bgLayerRight.eachLayer((l: any) => (l.isBaseMap = true));
+          bgLayerRight.addTo(targetMap);
+        })
+        .catch(e => console.error('Failed to load world geojson', e));
     }
 
-    // 現在位置の時刻ラベル
-    const curTimeLabel = formatForecastTime(cur.dateTime);
-    // 現在位置のラベルは少し左上に配置（予報の最初の点と重なりにくくするため）
-    const curLabelOffsetKm = 80;
-    const curRad = -135 * Math.PI / 180;
-    const curDLat = (curLabelOffsetKm / 111) * Math.cos(curRad);
-    const curDLon = (curLabelOffsetKm / (111 * Math.cos(lat * Math.PI / 180))) * Math.sin(curRad);
-    const curLabelLat = lat + curDLat;
-    const curLabelLon = lon + curDLon;
-
-    L.polyline([[lat, lon], [curLabelLat, curLabelLon]], {
-      color: '#FF2800', weight: 1.5, opacity: 0.8, dashArray: '2,2'
-    }).addTo(map);
-
-    const curLabelIcon = L.divIcon({
-      html: `<div style="font-family: 'LINE Seed JP', sans-serif; background:rgba(255,240,240,0.92);border:1px solid #FF2800;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#FF2800;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${curTimeLabel}</div>`,
-      iconSize: [0, 0], iconAnchor: [0, 0], className: '',
-    });
-    L.marker([curLabelLat, curLabelLon], { icon: curLabelIcon }).addTo(map);
-
-    // 暴風警戒域（暴風域のある予報点までで描画を止める）
-    drawStormWarningArea(map, typhoon, lat, lon, { color: '#FF2800', weight: 1.5, dashArray: '2,4' });
-
-    // 現在の強風域と暴風域（台風の目からの真の円として描画）
-    const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
-    if (curGaleCircle && curGaleCircle.radius > 0) {
-      L.circle([curGaleCircle.lat, curGaleCircle.lon], { radius: curGaleCircle.radius * 1000, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 0.15, weight: 1.5, dashArray: '5,5' }).addTo(map);
-    }
-
-    const curStormCircle = getTrueCircleFromRadii(lat, lon, cur.stormRadii);
-    if (curStormCircle && curStormCircle.radius > 0) {
-      L.circle([curStormCircle.lat, curStormCircle.lon], { radius: curStormCircle.radius * 1000, color: '#FF2800', fillColor: '#FF2800', fillOpacity: 0.2, weight: 2 }).addTo(map);
-    }
-
-    // 予報進路（点線）と予報円
-    forecasts.forEach((fc: any, idx: number) => {
-      if (!fc.lat || !fc.lon) return;
-      trackPoints.push([fc.lat, fc.lon]);
-
-      // 予報円（白点線）
-      if (fc.circleRadiusKm > 0) {
-        L.circle([fc.lat, fc.lon], {
-          radius: fc.circleRadiusKm * 1000, color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '6,4',
-        }).addTo(map);
-      }
-
-      // 予報円の中心にマーカー (非表示)
-
-      // 予報の暴風域（円で描画）
-      const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
-      if (fStormCircle && fStormCircle.radius > 0) {
-        L.circle([fStormCircle.lat, fStormCircle.lon], { radius: fStormCircle.radius * 1000, color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
-      }
-
-      // 時刻ラベル：円の中心から線を延ばして表示
-      const timeLabel = formatForecastTime(fc.dateTime);
-      
-      // 進行方向（大まかに北東向きが多い）に対して邪魔になりにくい角度を計算
-      // 奇数は左上(-45度)、偶数は右下(135度)などに振る
-      const angle = (idx % 2 === 0) ? -45 : 135; 
-      const labelOffsetKm = (fc.circleRadiusKm || 50) + 70; // 円の外側に配置
-      const rad = angle * Math.PI / 180;
-      const dLat = (labelOffsetKm / 111) * Math.cos(rad);
-      const dLon = (labelOffsetKm / (111 * Math.cos(fc.lat * Math.PI / 180))) * Math.sin(rad);
-      const labelLat = fc.lat + dLat;
-      const labelLon = fc.lon + dLon;
-
-      // 引き出し線
-      L.polyline([[fc.lat, fc.lon], [labelLat, labelLon]], {
-        color: '#666', weight: 1.5, opacity: 0.8, dashArray: '2,2'
-      }).addTo(map);
-
-      // 時刻ラベル (枠の中心が線の終端にくるように調整)
-      const labelIcon = L.divIcon({
-        html: `<div style="font-family: 'LINE Seed JP', sans-serif; background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15); transform: translate(-50%, -50%); display: inline-block;">${timeLabel}</div>`,
-        iconSize: [0, 0], iconAnchor: [0, 0], className: '',
-      });
-      L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
-    });
-
-    // 過去の進路を描画（熱帯低気圧期間は点線、台風期間は実線）
-    drawPastTrack(map, typhoon, lat, lon, { color: '#333333', weight: 2.5 });
-
-    // 進路線（予報点間）
+    const trackPoints = drawTyphoon(map, typhoon, { isObs: false, use24HourFormat });
     if (trackPoints.length > 1) {
-      L.polyline(trackPoints, { color: '#333', weight: 2, dashArray: '8,6', opacity: 0.8 }).addTo(map);
-    }
-
-    // 全体が見えるようにフィット（過去の進路、現在地、予報円を含む）
-    const allTrackPoints = getTyphoonAllTrackPoints(typhoon, lat, lon);
-    const fitTargets = allTrackPoints.length > 0 ? allTrackPoints : trackPoints;
-    if (fitTargets.length > 1) {
-      map.fitBounds(L.latLngBounds(fitTargets).pad(0.25), { maxZoom: 6 });
+      map.fitBounds(L.latLngBounds(trackPoints).pad(0.3), { maxZoom: 6 });
     } else {
       map.setZoom(6);
     }
@@ -730,7 +642,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       </div>
 
       {/* 地図 */}
-      <div ref={mapRef} style={{ width: '100%', height: '450px', backgroundColor: '#e2e8f0' }} />
+      <div ref={mapRef} style={{ width: '100%', height: '480px', backgroundColor: '#87cefa' }} />
 
       {/* 情報パネル */}
       <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>

@@ -554,39 +554,92 @@ export default {
     }
 
     const earthquakes = Array.isArray(report.Body?.Earthquake) ? report.Body.Earthquake : (report.Body?.Earthquake ? [report.Body.Earthquake] : []);
-    
-    for (const earthquake of earthquakes) {
-      if (!earthquake) continue;
-      
-      const originTime = earthquake.OriginTime;
-      const hypocenter = earthquake.Hypocenter?.Area?.Name;
-      let magnitude = earthquake.Magnitude?.['#text'] || earthquake.Magnitude;
-      if (typeof magnitude !== 'string' && typeof magnitude !== 'number') magnitude = '';
+    const maxInt = report.Body?.Intensity?.Observation?.MaxInt;
 
-      const maxInt = report.Body?.Intensity?.Observation?.MaxInt;
-      const coord = parseQuakeCoordinate(earthquake.Hypocenter?.Area?.Coordinate);
+    // 地震情報電文（震源情報、震度情報、または震度速報）の処理
+    if (earthquakes.length > 0) {
+      for (const earthquake of earthquakes) {
+        if (!earthquake) continue;
+        
+        const originTime = earthquake.OriginTime || report.Head?.TargetDateTime || report.Head?.ReportDateTime || '';
+        const hypocenter = earthquake.Hypocenter?.Area?.Name || '';
+        let magnitude = earthquake.Magnitude?.['#text'] || earthquake.Magnitude;
+        if (typeof magnitude !== 'string' && typeof magnitude !== 'number') magnitude = '';
 
-      if (originTime && hypocenter) {
-        // 同一地震（EventID）の続報は1件にまとめる（震源情報のみの続報で震度を失わないようにする）
-        let prevMaxInt = '';
-        if (eventId) {
-          for (let i = earthquakesData.length - 1; i >= 0; i--) {
-            if (earthquakesData[i].eventId === eventId) {
-              prevMaxInt = prevMaxInt || earthquakesData[i].maxIntensity || '';
-              earthquakesData.splice(i, 1);
-            }
+        const coord = parseQuakeCoordinate(earthquake.Hypocenter?.Area?.Coordinate);
+
+        if (originTime || hypocenter || eventId) {
+          // 同一地震の既存データを検索（EventID一致、または同一発生時刻）
+          let existingIdx = -1;
+          if (eventId) {
+            existingIdx = earthquakesData.findIndex(eq => eq.eventId === eventId);
+          }
+          if (existingIdx === -1 && originTime) {
+            existingIdx = earthquakesData.findIndex(eq => eq.originTime === originTime && (hypocenter ? eq.hypocenterName === hypocenter : true));
+          }
+
+          if (existingIdx !== -1) {
+            // 続報による上書き・更新（新情報で上書きし、未記載項目は既存値を維持）
+            const prev = earthquakesData[existingIdx];
+            earthquakesData[existingIdx] = {
+              xmlId,
+              eventId: eventId || prev.eventId,
+              originTime: originTime || prev.originTime,
+              hypocenterName: hypocenter || prev.hypocenterName,
+              magnitude: (magnitude !== undefined && magnitude !== '') ? String(magnitude) : prev.magnitude,
+              maxIntensity: maxInt || prev.maxIntensity || '',
+              depth: (coord?.depthKm !== undefined && coord.depthKm !== null) ? coord.depthKm : prev.depth,
+              lat: coord?.lat ?? prev.lat ?? null,
+              lon: coord?.lon ?? prev.lon ?? null,
+              updatedAt: new Date().toISOString()
+            };
+          } else {
+            // 新規登録
+            earthquakesData.push({
+              xmlId,
+              eventId,
+              originTime,
+              hypocenterName: hypocenter || '震源調査中',
+              magnitude: magnitude ? String(magnitude) : '',
+              maxIntensity: maxInt || '',
+              depth: coord?.depthKm ?? 0,
+              lat: coord?.lat ?? null,
+              lon: coord?.lon ?? null,
+              updatedAt: new Date().toISOString()
+            });
+          }
+          
+          // 直近200件に制限
+          if (earthquakesData.length > 200) {
+            earthquakesData.shift();
           }
         }
+      }
+    } else if (maxInt) {
+      // 震度速報（VXSE51）などEarthquakeタグがなくIntensityのみの場合
+      const originTime = report.Head?.TargetDateTime || report.Head?.ReportDateTime || '';
+      let existingIdx = -1;
+      if (eventId) {
+        existingIdx = earthquakesData.findIndex(eq => eq.eventId === eventId);
+      }
+      if (existingIdx !== -1) {
+        earthquakesData[existingIdx].maxIntensity = maxInt;
+        earthquakesData[existingIdx].xmlId = xmlId;
+        earthquakesData[existingIdx].updatedAt = new Date().toISOString();
+      } else {
         earthquakesData.push({
-          xmlId, eventId, originTime, hypocenterName: hypocenter, 
-          magnitude: magnitude || '', maxIntensity: maxInt || prevMaxInt || '',
-          depth: coord?.depthKm ?? 0, lat: coord?.lat ?? null, lon: coord?.lon ?? null
+          xmlId,
+          eventId,
+          originTime,
+          hypocenterName: '震源調査中',
+          magnitude: '',
+          maxIntensity: maxInt,
+          depth: 0,
+          lat: null,
+          lon: null,
+          updatedAt: new Date().toISOString()
         });
-        
-        // 直近200件に制限
-        if (earthquakesData.length > 200) {
-          earthquakesData.shift(); // 古いものを削除
-        }
+        if (earthquakesData.length > 200) earthquakesData.shift();
       }
     }
   },

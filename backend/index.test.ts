@@ -59,6 +59,44 @@ describe('processEarthquakeToMemory', () => {
     expect(earthquakesData[1].magnitude).toBe('4.1');
     expect(earthquakesData[1].maxIntensity).toBe('2');
   });
+
+  it('should overwrite and merge earthquake details when subsequent reports arrive for the same eventId', () => {
+    const earthquakesData: any[] = [];
+    
+    // 1st report: 震度速報 (Intensity only)
+    const report1 = {
+      Head: { EventID: '20261029010000', TargetDateTime: '2026-10-29T01:00:00+09:00' },
+      Body: { Intensity: { Observation: { MaxInt: '3' } } }
+    };
+    defaultExport.processEarthquakeToMemory(report1, 'xml-1', '発表', earthquakesData);
+    expect(earthquakesData.length).toBe(1);
+    expect(earthquakesData[0].maxIntensity).toBe('3');
+    expect(earthquakesData[0].hypocenterName).toBe('震源調査中');
+
+    // 2nd report: 震源・震度に関する情報 (Hypocenter and update intensity to 4)
+    const report2 = {
+      Head: { EventID: '20261029010000' },
+      Body: {
+        Earthquake: {
+          OriginTime: '2026-10-29T01:00:00+09:00',
+          Hypocenter: {
+            Area: { Name: '熊本県熊本地方', Coordinate: '+32.8+130.7-10000/' }
+          },
+          Magnitude: '4.5'
+        },
+        Intensity: { Observation: { MaxInt: '4' } }
+      }
+    };
+    defaultExport.processEarthquakeToMemory(report2, 'xml-2', '発表', earthquakesData);
+    expect(earthquakesData.length).toBe(1);
+    expect(earthquakesData[0].maxIntensity).toBe('4');
+    expect(earthquakesData[0].hypocenterName).toBe('熊本県熊本地方');
+    expect(earthquakesData[0].magnitude).toBe('4.5');
+    expect(earthquakesData[0].depth).toBe(10);
+    expect(earthquakesData[0].lat).toBe(32.8);
+    expect(earthquakesData[0].lon).toBe(130.7);
+    expect(earthquakesData[0].xmlId).toBe('xml-2');
+  });
 });
 
 import { pruneExpiredTyphoons, parseQuakeCoordinate } from './index';
