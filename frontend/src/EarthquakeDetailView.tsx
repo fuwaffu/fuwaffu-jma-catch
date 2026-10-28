@@ -113,20 +113,34 @@ export default function EarthquakeDetailView({
       setLoadingDetail(true);
       setDetailError(null);
       try {
-        const id = earthquake.xmlId || '';
         let data: any = null;
-        let jsonFilename = id && id.endsWith('.json') ? id : null;
+        // 1. バックエンドプロキシ経由でJMA JSONを取得（CORSおよびVXSE5k震度情報特定をバックエンドが保証）
+        try {
+          const params = new URLSearchParams();
+          if (earthquake.xmlId) params.set('id', earthquake.xmlId);
+          if (earthquake.eventId) params.set('eid', earthquake.eventId);
+          if (earthquake.originTime) params.set('time', earthquake.originTime);
+          if (earthquake.hypocenterName) params.set('anm', earthquake.hypocenterName);
+          params.set('_t', String(Date.now()));
 
-        // xmlIdがXMLのURLだった場合、またはjsonFilenameが未定の場合、list.jsonから該当する地震を検索
-        if (!jsonFilename) {
+          const res = await fetch(`${API_BASE}/api/earthquake-detail?${params.toString()}`);
+          if (res.ok) {
+            data = await res.json();
+          }
+        } catch (e) {
+          console.warn('Backend proxy fetch failed, falling back to direct JMA lookup', e);
+        }
+
+        // 2. フォールバック: 直接JMA Bosaiから取得
+        if (!data) {
           try {
             const listRes = await fetch('https://www.jma.go.jp/bosai/quake/data/list.json');
             if (listRes.ok) {
               const list = (await listRes.json()) as any[];
               const eqTime = new Date(earthquake.originTime).getTime();
-              const match = list.find((e: any) => {
-                if (earthquake.eventId && e.eid === earthquake.eventId) return true;
-                if (e.at && Math.abs(new Date(e.at).getTime() - eqTime) < 90000) {
+              const matchingEntries = list.filter((e: any) => {
+                if (earthquake.eventId && (e.eid === earthquake.eventId || e.json?.includes(earthquake.eventId))) return true;
+                if (e.at && Math.abs(new Date(e.at).getTime() - eqTime) < 120000) {
                   if (earthquake.hypocenterName && e.anm) {
                     return e.anm.includes(earthquake.hypocenterName) || earthquake.hypocenterName.includes(e.anm);
                   }
@@ -135,47 +149,26 @@ export default function EarthquakeDetailView({
                 return false;
               });
 
-              if (match) {
-                if (match.json) jsonFilename = match.json;
-                // list.jsonから座標が取れれば初期セット
-                if (match.cod) {
-                  const p = parseQuakeCoord(match.cod);
-                  if (p) {
-                    setHypoLat(p.lat);
-                    setHypoLon(p.lon);
-                    if (p.depthKm != null) setDepthKm(p.depthKm);
-                  }
-                }
+              const targetEntry = matchingEntries.find((e: any) => e.ttl?.includes('震源・震度') || e.json?.includes('VXSE5k') || e.json?.includes('VXSE53'))
+                || matchingEntries.find((e: any) => e.ttl?.includes('震度') || e.json?.includes('VXSE51'))
+                || matchingEntries[0];
+
+              if (targetEntry?.json) {
+                const jmaRes = await fetch(`https://www.jma.go.jp/bosai/quake/data/${targetEntry.json}`);
+                if (jmaRes.ok) data = await jmaRes.json();
               }
             }
           } catch (e) {
-            console.error('Failed to lookup list.json', e);
+            console.error('Direct JMA lookup failed', e);
           }
-        }
-
-        // 1. 直接JMA Bosaiから取得（CORS: *）
-        if (jsonFilename) {
-          try {
-            const jmaRes = await fetch(`https://www.jma.go.jp/bosai/quake/data/${jsonFilename}`);
-            if (jmaRes.ok) data = await jmaRes.json();
-          } catch (e) {}
-        }
-
-        // 2. バックエンドプロキシ経由フォールバック
-        if (!data) {
-          try {
-            const targetId = jsonFilename || id;
-            const res = await fetch(`${API_BASE}/api/earthquake-detail?id=${encodeURIComponent(targetId)}`);
-            if (res.ok) data = await res.json();
-          } catch (e) {}
         }
 
         if (isCancelled) return;
 
         if (data) {
           // 震源情報の抽出
-          const eqBody = data.Body?.Earthquake;
-          const coordStr = eqBody?.Hypocenter?.Area?.Coordinate;
+          const eqBody = data.Body?.Earthquake || data.Earthquake;
+          const coordStr = eqBody?.Hypocenter?.Area?.Coordinate || data.cod;
           if (coordStr) {
             const parsed = parseQuakeCoord(coordStr);
             if (parsed) {
@@ -186,19 +179,20 @@ export default function EarthquakeDetailView({
           }
 
           // 観測地点および市区町村の抽出
-          const obsPrefs = data.Body?.Intensity?.Observation?.Pref || [];
+          const obs = data.Body?.Intensity?.Observation || data.Intensity?.Observation || data.Observation;
+          const obsPrefs = obs?.Pref || obs?.pref || [];
           const byIntensity: Record<string, Record<string, string[]>> = {};
           const stationList: StationItem[] = [];
 
-          const prefArray = Array.isArray(obsPrefs) ? obsPrefs : [obsPrefs];
+          const prefArray = Array.isArray(obsPrefs) ? obsPrefs : [obsPrefs].filter(Boolean);
           for (const p of prefArray) {
-            const prefName = p.Name || '';
+            const prefName = p.Name || p.name || '';
             const areas = Array.isArray(p.Area) ? p.Area : [p.Area].filter(Boolean);
             for (const a of areas) {
               const cities = Array.isArray(a.City) ? a.City : [a.City].filter(Boolean);
               for (const c of cities) {
-                const cInt = formatIntensity(c.MaxInt);
-                const cityName = c.Name || '';
+                const cInt = formatIntensity(c.MaxInt || c.maxi);
+                const cityName = c.Name || c.name || '';
 
                 if (cInt && cInt !== '—') {
                   if (!byIntensity[cInt]) byIntensity[cInt] = {};
@@ -214,8 +208,8 @@ export default function EarthquakeDetailView({
                   const latlon = st.latlon;
                   if (latlon && typeof latlon.lat === 'number' && typeof latlon.lon === 'number') {
                     stationList.push({
-                      name: st.Name || cityName,
-                      int: formatIntensity(st.Int),
+                      name: st.Name || st.name || cityName,
+                      int: formatIntensity(st.Int || st.int || c.MaxInt),
                       lat: latlon.lat,
                       lon: latlon.lon
                     });

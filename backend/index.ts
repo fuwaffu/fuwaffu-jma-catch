@@ -125,16 +125,80 @@ export default {
       if (url.pathname === "/api/warnings") return await cachedKvQuery('warnings', env, corsHeaders);
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
       if (url.pathname === "/api/earthquake-detail") {
-        const id = url.searchParams.get('id');
-        if (!id) return new Response(JSON.stringify({ error: "Missing id" }), { status: 400, headers: corsHeaders });
-        const cleanId = id.replace(/[^a-zA-Z0-9_.]/g, '');
-        const targetUrl = cleanId.endsWith('.json') ? `https://www.jma.go.jp/bosai/quake/data/${cleanId}` : cleanId;
-        const jmaRes = await fetch(targetUrl, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
-        if (!jmaRes.ok) return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: corsHeaders });
-        const text = await jmaRes.text();
-        return new Response(text, {
-          headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }
-        });
+        const id = url.searchParams.get('id') || '';
+        const eid = url.searchParams.get('eid') || '';
+        const time = url.searchParams.get('time') || '';
+        const anm = url.searchParams.get('anm') || '';
+
+        let targetJsonFilename = '';
+        if (id.endsWith('.json')) {
+          targetJsonFilename = id.split('/').pop()?.replace(/[^a-zA-Z0-9_.]/g, '') || '';
+        }
+
+        // list.jsonから該当する地震のJSONファイル名を特定（震源・震度情報 VXSE5k/VXSE53 を最優先）
+        if (!targetJsonFilename) {
+          try {
+            const listRes = await fetch('https://www.jma.go.jp/bosai/quake/data/list.json', {
+              headers: { 'User-Agent': 'Jma-Dashboard/1.0' }
+            });
+            if (listRes.ok) {
+              const list = await listRes.json() as any[];
+              
+              // 同一地震のエントリを絞り込み
+              const matchingEntries = list.filter((e: any) => {
+                if (eid && (e.eid === eid || e.json?.includes(eid))) return true;
+                if (time && e.at && Math.abs(new Date(e.at).getTime() - new Date(time).getTime()) < 120000) {
+                  if (anm && e.anm) return e.anm.includes(anm) || anm.includes(e.anm);
+                  return true;
+                }
+                if (id) {
+                  const m = id.match(/(\d{14})/);
+                  if (m && e.json?.includes(m[1])) return true;
+                }
+                return false;
+              });
+
+              if (matchingEntries.length > 0) {
+                // 震源・震度情報 (VXSE5k, VXSE53) を最優先、なければ震度速報 (VXSE51) を優先
+                const intensityReport = matchingEntries.find((e: any) => 
+                  e.ttl?.includes('震源・震度') || e.json?.includes('VXSE5k') || e.json?.includes('VXSE53')
+                ) || matchingEntries.find((e: any) => 
+                  e.ttl?.includes('震度') || e.json?.includes('VXSE51')
+                ) || matchingEntries[0];
+
+                if (intensityReport?.json) {
+                  targetJsonFilename = intensityReport.json;
+                }
+              }
+            }
+          } catch(e) {
+            console.error('Error querying JMA list.json:', e);
+          }
+        }
+
+        if (targetJsonFilename) {
+          const jmaUrl = `https://www.jma.go.jp/bosai/quake/data/${targetJsonFilename}`;
+          const jmaRes = await fetch(jmaUrl, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+          if (jmaRes.ok) {
+            const jsonText = await jmaRes.text();
+            return new Response(jsonText, {
+              headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=60" }
+            });
+          }
+        }
+
+        // 直接XMLのURLが指定されていてJSONが見つからなかった場合、XMLを取得して返すフォールバック
+        if (id.startsWith('http')) {
+          const xmlRes = await fetch(id, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+          if (xmlRes.ok) {
+            const xmlText = await xmlRes.text();
+            return new Response(xmlText, {
+              headers: { ...corsHeaders, "Content-Type": "application/xml", "Cache-Control": "public, max-age=3600" }
+            });
+          }
+        }
+
+        return new Response(JSON.stringify({ error: "Earthquake detail not found" }), { status: 404, headers: corsHeaders });
       }
       if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders, (d) => pruneExpiredTyphoons(d));
       if (url.pathname === "/api/status") {
