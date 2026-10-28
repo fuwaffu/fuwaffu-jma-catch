@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import EarthquakeDetailView, { formatIntensity, getSeismicIntensityColor } from './EarthquakeDetailView';
+import {
+  getOuterTangentPolygon,
+  getTrueCircleFromRadii,
+  drawPastTrack,
+  drawStormWarningArea,
+  getTyphoonAllTrackPoints,
+} from './typhoonMap';
 
 const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
+const EXPIRE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'warnings' | 'earthquakes' | 'typhoons'>('warnings');
@@ -11,8 +20,10 @@ export default function App() {
   const [typhoons, setTyphoons] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [syncStatus, setSyncStatus] = useState({ isSyncing: false, progress: 0 });
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
+  const [selectedEarthquake, setSelectedEarthquake] = useState<any | null>(null);
 
   const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('prefecture');
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
@@ -42,11 +53,20 @@ export default function App() {
 
       setWarnings(await warningsRes.json());
       setEarthquakes(await earthquakesRes.json());
-      setTyphoons(await typhoonsRes.json());
+      const rawTyphoons = await typhoonsRes.json();
+      const now = Date.now();
+      const activeTyphoons = Array.isArray(rawTyphoons) ? rawTyphoons.filter((t: any) => {
+        const ts = new Date(t.updatedAt || t.current?.dateTime).getTime();
+        return isNaN(ts) || now - ts < EXPIRE_DAYS_MS;
+      }) : [];
+      setTyphoons(activeTyphoons);
 
       if (statusRes.ok) {
         const statusData = await statusRes.json();
         setLastUpdated(statusData.lastUpdated || null);
+        if (statusData.lastUpdated) {
+          console.log("【システム更新検証】最新の更新時刻:", statusData.lastUpdated);
+        }
       }
     } catch (e: any) {
       setError(e.message === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : e.message);
@@ -60,6 +80,37 @@ export default function App() {
       fetchData();
     }, 300000); // 5 minutes
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let intervalId: any;
+    let isProcessing = false;
+    const checkStatus = async () => {
+      if (isProcessing) return;
+      isProcessing = true;
+      try {
+        const res = await fetch(`${API_BASE}/api/status`);
+        const data = await res.json();
+        setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
+        
+        if (data.isSyncing) {
+            console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
+            // Poll sync-step to process the backend KV queue
+            const stepRes = await fetch(`${API_BASE}/api/sync-step`);
+            const stepData = await stepRes.json();
+            if (stepData.ok) {
+                setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
+            }
+        }
+      } catch (e) {
+        console.error('[Sync Status Error]', e);
+      } finally {
+        isProcessing = false;
+      }
+    };
+    checkStatus();
+    intervalId = setInterval(checkStatus, 1500);
+    return () => clearInterval(intervalId);
   }, []);
 
   // viewModeに合致するデータだけをフィルタリング
@@ -124,7 +175,18 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', padding: '16px', backgroundColor: '#f1f5f9', color: '#0f172a' }}>
-      <div style={{ maxWidth: '1152px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1152px', margin: '0 auto', position: 'relative' }}>
+        {syncStatus.isSyncing && (
+          <div style={{
+            position: 'absolute', top: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 2000,
+            backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff', padding: '16px 32px', borderRadius: '9999px',
+            display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(12px)', fontSize: '1.25rem', fontWeight: 'bold'
+          }}>
+            <i className="fa-solid fa-arrows-rotate fa-spin"></i>
+            <span>情報整理中... {syncStatus.progress}%</span>
+          </div>
+        )}
         
         <header style={{ 
           background: 'rgba(255, 255, 255, 0.65)', 
@@ -189,7 +251,11 @@ export default function App() {
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  if (tab.id !== 'earthquakes') setSelectedEarthquake(null);
+                  if (tab.id !== 'typhoons') setSelectedTyphoon(null);
+                }}
                 style={{
                   flex: 1, padding: '12px 16px', textAlign: 'center', fontWeight: 600, fontSize: '0.875rem',
                   border: 'none', cursor: 'pointer', transition: 'all 0.2s',
@@ -250,12 +316,13 @@ export default function App() {
                       <th style={{ padding: '12px 16px', fontWeight: 600, width: '50%' }}>発表中の警報・注意報</th>
                     </tr>
                   )}
-                  {activeTab === 'earthquakes' && (
+                  {activeTab === 'earthquakes' && !selectedEarthquake && (
                     <tr style={{ color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>発生日時</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>震源地</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>マグニチュード</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>最大震度</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>詳細</th>
                     </tr>
                   )}
                   {activeTab === 'typhoons' && !selectedTyphoon && (
@@ -380,34 +447,56 @@ export default function App() {
                         );
                       });
                     })()}
-                  {activeTab === 'earthquakes' && [...earthquakes]
+                  {activeTab === 'earthquakes' && !selectedEarthquake && [...earthquakes]
                     .sort((a, b) => new Date(b.originTime).getTime() - new Date(a.originTime).getTime())
                     .map((eq, index) => {
-                      const formatIntensity = (i: string) => {
-                        if (i === '5-') return '5弱';
-                        if (i === '5+') return '5強';
-                        if (i === '6-') return '6弱';
-                        if (i === '6+') return '6強';
-                        return String(i).replace(/[+-]/g, '');
-                      };
                       const formattedIntensity = formatIntensity(eq.maxIntensity);
                       
                       return (
-                      <tr key={eq.xmlId || index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
+                      <tr
+                        key={eq.xmlId || index}
+                        className="slide-in-row fade-update"
+                        style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
                         onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                        onClick={() => setSelectedEarthquake(eq)}
                       >
                         <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(eq.originTime).toLocaleString()}</td>
-                        <td style={{ padding: '12px 16px', fontWeight: 500, color: '#1e293b' }}>{eq.hypocenterName}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1d4ed8', textDecoration: 'underline', textDecorationColor: '#93c5fd', textUnderlineOffset: '4px' }}>
+                          {eq.hypocenterName}
+                        </td>
                         <td style={{ padding: '12px 16px', color: '#1e293b' }}>M{eq.magnitude}</td>
                         <td style={{ padding: '12px 16px' }}>
                           <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap', ...getSeismicIntensityColor(formattedIntensity) }}>
                             震度 {formattedIntensity}
                           </span>
                         </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            backgroundColor: '#e0e7ff',
+                            color: '#3730a3',
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            display: 'inline-block'
+                          }}>
+                            詳細地図 →
+                          </span>
+                        </td>
                       </tr>
                       );
                     })}
+                  {activeTab === 'earthquakes' && selectedEarthquake && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 0 }}>
+                        <EarthquakeDetailView
+                          earthquake={selectedEarthquake}
+                          onBack={() => setSelectedEarthquake(null)}
+                        />
+                      </td>
+                    </tr>
+                  )}
                   {activeTab === 'typhoons' && !selectedTyphoon && typhoons.map((ty, index) => {
                     const num = String(ty.tcNumber);
                     const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
@@ -519,137 +608,12 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     const forecasts = typhoon.forecasts || [];
     const trackPoints: [number, number][] = [[lat, lon]];
     
-    // ポリゴン生成ヘルパー
-    // 扇形（コーン）の外枠を計算するヘルパー
-    const getOuterTangentPolygon = (points: { lat: number, lon: number, r: number }[]) => {
-      if (points.length <= 1) return [];
-      
-      const leftPoints: [number, number][] = [];
-      const rightPoints: [number, number][] = [];
-      
-      // 球面上の緯度経度から距離(km)と角度(ラジアン)を簡易計算
-      const getDistAndAngle = (p1: any, p2: any) => {
-        const dLat = (p2.lat - p1.lat) * 111;
-        const dLon = (p2.lon - p1.lon) * 111 * Math.cos((p1.lat + p2.lat) / 2 * Math.PI / 180);
-        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-        const angle = Math.atan2(dLat, dLon); 
-        return { dist, angle };
-      };
-
-      const toLatLng = (p: any, angle: number): [number, number] => {
-        return [
-          p.lat + (p.r * Math.sin(angle)) / 111,
-          p.lon + (p.r * Math.cos(angle)) / (111 * Math.cos(p.lat * Math.PI / 180))
-        ];
-      };
-
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const { dist, angle } = getDistAndAngle(p1, p2);
-        
-        if (dist <= Math.abs(p1.r - p2.r) || dist === 0) {
-          continue; // 内包されるか同じ場所の場合は接線を引かない
-        }
-        
-        const theta = Math.asin((p1.r - p2.r) / dist);
-        
-        const a1Left = angle + Math.PI / 2 + theta;
-        const a1Right = angle - Math.PI / 2 - theta;
-        const a2Left = angle + Math.PI / 2 + theta;
-        const a2Right = angle - Math.PI / 2 - theta;
-
-        if (i === 0) {
-          // 最初の円の背面（お尻）の半円を追加
-          for (let a = a1Right; a <= a1Left + 0.01; a += Math.PI / 16) {
-            rightPoints.push(toLatLng(p1, a));
-          }
-        }
-        
-        leftPoints.push(toLatLng(p1, a1Left));
-        leftPoints.push(toLatLng(p2, a2Left));
-        
-        rightPoints.unshift(toLatLng(p1, a1Right));
-        rightPoints.unshift(toLatLng(p2, a2Right));
-
-        if (i === points.length - 2) {
-          // 最後の円の前面（頭）の半円を追加
-          for (let a = a2Left; a <= a2Right + 2 * Math.PI + 0.01; a += Math.PI / 16) {
-            leftPoints.push(toLatLng(p2, a));
-          }
-        }
-      }
-      
-      return [...leftPoints, ...rightPoints];
-    };
-
     // 白色の予報円（Cone of uncertainty）
     const forecastPoints = [{ lat, lon, r: 0 }, ...forecasts.map((f: any) => ({ lat: f.lat, lon: f.lon, r: f.circleRadiusKm || 0 }))];
     const forecastPolygon = getOuterTangentPolygon(forecastPoints);
     if (forecastPolygon.length > 0) {
       L.polygon(forecastPolygon, { color: '#fff', fillColor: 'transparent', weight: 1.5, dashArray: '5,5' }).addTo(map);
     }
-
-    // 気象庁の非対称半径データから「真の円の中心と半径」を計算するヘルパー
-    const getTrueCircleFromRadii = (eyeLat: number, eyeLon: number, radii: any[]) => {
-      if (!radii || radii.length === 0) return null;
-      
-      const all = radii.find(r => r.direction === '全域' || !r.direction);
-      if (all) {
-        return { lat: eyeLat, lon: eyeLon, radius: all.radiusKm };
-      }
-
-      const dirAngles: Record<string, number> = {
-        '北': 0, '北北東': 22.5, '北東': 45, '東北東': 67.5,
-        '東': 90, '東南東': 112.5, '南東': 135, '南南東': 157.5,
-        '南': 180, '南南西': 202.5, '南西': 225, '西南西': 247.5,
-        '西': 270, '西北西': 292.5, '北西': 315, '北北西': 337.5
-      };
-
-      let maxR = 0;
-      let minOppositeR = 0;
-      let maxDir = '';
-
-      for (const r of radii) {
-        if (r.radiusKm > maxR) {
-          maxR = r.radiusKm;
-          maxDir = (r.direction || '').replace('側', '');
-        }
-      }
-
-      const maxAngle = dirAngles[maxDir];
-      if (maxAngle !== undefined) {
-        const oppAngle = (maxAngle + 180) % 360;
-        let minDiff = 360;
-        let foundOpposite = false;
-        for (const r of radii) {
-           const dir = (r.direction || '').replace('側', '');
-           const angle = dirAngles[dir];
-           if (angle !== undefined) {
-              let diff = Math.abs(angle - oppAngle);
-              if (diff > 180) diff = 360 - diff;
-              if (diff < minDiff) {
-                 minDiff = diff;
-                 minOppositeR = r.radiusKm;
-                 foundOpposite = true;
-              }
-           }
-        }
-        
-        if (!foundOpposite || minOppositeR === 0) minOppositeR = maxR;
-
-        const trueRadius = (maxR + minOppositeR) / 2;
-        const offsetKm = (maxR - minOppositeR) / 2;
-        
-        const rad = maxAngle * Math.PI / 180;
-        const dLat = (offsetKm * Math.cos(rad)) / 111;
-        const dLon = (offsetKm * Math.sin(rad)) / (111 * Math.cos(eyeLat * Math.PI / 180));
-        
-        return { lat: eyeLat + dLat, lon: eyeLon + dLon, radius: trueRadius };
-      }
-      
-      return { lat: eyeLat, lon: eyeLon, radius: maxR };
-    };
 
     // 現在位置の時刻ラベル
     const curTimeLabel = formatForecastTime(cur.dateTime);
@@ -671,28 +635,8 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
     });
     L.marker([curLabelLat, curLabelLon], { icon: curLabelIcon }).addTo(map);
 
-    // 赤色の暴風警戒域（Cone of storm warning area）
-    const getStormCircleForPoint = (fEyeLat: number, fEyeLon: number, radii: any[]) => {
-      const c = getTrueCircleFromRadii(fEyeLat, fEyeLon, radii);
-      return c ? { lat: c.lat, lon: c.lon, r: c.radius } : { lat: fEyeLat, lon: fEyeLon, r: 0 };
-    };
-    
-    const curStormRaw = getStormCircleForPoint(lat, lon, cur.stormRadii);
-    const stormPointsRaw = [curStormRaw];
-    for (const f of forecasts) {
-      const p = getStormCircleForPoint(f.lat, f.lon, f.stormRadii);
-      stormPointsRaw.push(p);
-      if (p.r === 0) break; // 暴風域が0になった時点で先の予報を打ち切る
-    }
-    
-    if (stormPointsRaw.some(p => p.r > 0)) {
-      const stormPolygon = getOuterTangentPolygon(stormPointsRaw);
-      if (stormPolygon.length > 0) {
-        L.polygon(stormPolygon, { color: '#FF2800', fillColor: 'transparent', weight: 1.5, dashArray: '2,4' }).addTo(map);
-      }
-    }
-
-
+    // 暴風警戒域（暴風域のある予報点までで描画を止める）
+    drawStormWarningArea(map, typhoon, lat, lon, { color: '#FF2800', weight: 1.5, dashArray: '2,4' });
 
     // 現在の強風域と暴風域（台風の目からの真の円として描画）
     const curGaleCircle = getTrueCircleFromRadii(lat, lon, cur.galeRadii);
@@ -717,12 +661,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         }).addTo(map);
       }
 
-      // 予報円の中心にマーカー
-      const fcIcon = L.divIcon({
-        html: '<div style="width:8px;height:8px;background:#555;border-radius:50%;border:1px solid #fff;"></div>',
-        iconSize: [8, 8], iconAnchor: [4, 4], className: '',
-      });
-      L.marker([fc.lat, fc.lon], { icon: fcIcon }).addTo(map);
+      // 予報円の中心にマーカー (非表示)
 
       // 予報の暴風域（円で描画）
       const fStormCircle = getTrueCircleFromRadii(fc.lat, fc.lon, fc.stormRadii);
@@ -756,14 +695,19 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       L.marker([labelLat, labelLon], { icon: labelIcon }).addTo(map);
     });
 
-    // 進路線
+    // 過去の進路を描画（熱帯低気圧期間は点線、台風期間は実線）
+    drawPastTrack(map, typhoon, lat, lon, { color: '#333333', weight: 2.5 });
+
+    // 進路線（予報点間）
     if (trackPoints.length > 1) {
       L.polyline(trackPoints, { color: '#333', weight: 2, dashArray: '8,6', opacity: 0.8 }).addTo(map);
     }
 
-    // 全体が見えるようにフィット
-    if (trackPoints.length > 1) {
-      map.fitBounds(L.latLngBounds(trackPoints).pad(0.3), { maxZoom: 6 });
+    // 全体が見えるようにフィット（過去の進路、現在地、予報円を含む）
+    const allTrackPoints = getTyphoonAllTrackPoints(typhoon, lat, lon);
+    const fitTargets = allTrackPoints.length > 0 ? allTrackPoints : trackPoints;
+    if (fitTargets.length > 1) {
+      map.fitBounds(L.latLngBounds(fitTargets).pad(0.25), { maxZoom: 6 });
     } else {
       map.setZoom(6);
     }
@@ -877,24 +821,6 @@ function getWarningColor(level: string): React.CSSProperties {
       return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2: 黄
     default:
       return { backgroundColor: '#f3f4f6', color: '#333333' };
-  }
-}
-
-// 気象庁標準カラーに準拠した震度の色付け
-function getSeismicIntensityColor(intensity: string): React.CSSProperties {
-  if (intensity == null) return { backgroundColor: '#e2e8f0', color: '#475569' };
-  const i = String(intensity).replace(/[^0-9強弱]/g, '');
-  switch (i) {
-    case '7': return { backgroundColor: '#B40068', color: '#FFFFFF', border: '1px solid #9c0059' };
-    case '6強': return { backgroundColor: '#A50021', color: '#FFFFFF', border: '1px solid #8e001c' };
-    case '6弱': return { backgroundColor: '#FF2800', color: '#FFFFFF', border: '1px solid #e02300' };
-    case '5強': return { backgroundColor: '#FF9900', color: '#000000', border: '1px solid #e68a00' };
-    case '5弱': return { backgroundColor: '#FFD700', color: '#000000', border: '1px solid #d4b200' };
-    case '4': return { backgroundColor: '#FAEA00', color: '#000000', border: '1px solid #e5d600' };
-    case '3': return { backgroundColor: '#0000FF', color: '#FFFFFF', border: '1px solid #0000e0' };
-    case '2': return { backgroundColor: '#00AA00', color: '#FFFFFF', border: '1px solid #009300' };
-    case '1': return { backgroundColor: '#F2F2FF', color: '#000000', border: '1px solid #dcdcf2' };
-    default: return { backgroundColor: '#e2e8f0', color: '#475569' };
   }
 }
 

@@ -41,10 +41,31 @@ const parser = new XMLParser({
 // Cache TTL: 10分
 const CACHE_TTL_SECONDS = 60;
 
+// 温帯低気圧化・熱帯低気圧化（台風としての情報終了）後は電文が止まるため、
+// 最終更新からこの日数が経過した台風は一覧から削除する（発表中の台風は3〜6時間毎に更新される）
+const TYPHOON_EXPIRE_DAYS = 3;
+
+export function pruneExpiredTyphoons(typhoons: any[], now = Date.now()): any[] {
+  const limit = TYPHOON_EXPIRE_DAYS * 24 * 60 * 60 * 1000;
+  return typhoons.filter((t: any) => {
+    const ts = new Date(t.updatedAt || t.current?.dateTime).getTime();
+    return isNaN(ts) || now - ts < limit;
+  });
+}
+
+// "+32.3+130.5-10000/" → { lat, lon, depthKm }
+export function parseQuakeCoordinate(coord: any): { lat: number; lon: number; depthKm: number | null } | null {
+  const text = typeof coord === 'object' && coord !== null ? coord['#text'] : coord;
+  const m = String(text || '').match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)([+-]\d+\.?\d*)?\//);
+  if (!m) return null;
+  return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), depthKm: m[3] ? Math.abs(parseFloat(m[3])) / 1000 : null };
+}
+
 async function cachedKvQuery(
   cacheKey: string,
   env: Env,
-  corsHeaders: Record<string, string>
+  corsHeaders: Record<string, string>,
+  transform?: (data: any) => any
 ): Promise<Response> {
   const cache = caches.default;
   const cacheUrl = new URL(`https://cache-internal/${cacheKey}`);
@@ -65,6 +86,7 @@ async function cachedKvQuery(
     if (cacheKey === 'status') data = { lastUpdated: null };
     else data = [];
   }
+  if (transform) data = transform(data);
 
   const body = JSON.stringify(data);
   const response = new Response(body, {
@@ -102,8 +124,40 @@ export default {
     try {
       if (url.pathname === "/api/warnings") return await cachedKvQuery('warnings', env, corsHeaders);
       if (url.pathname === "/api/earthquakes") return await cachedKvQuery('earthquakes', env, corsHeaders);
-      if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders);
-      if (url.pathname === "/api/status") return await cachedKvQuery('status', env, corsHeaders);
+      if (url.pathname === "/api/earthquake-detail") {
+        const id = url.searchParams.get('id');
+        if (!id) return new Response(JSON.stringify({ error: "Missing id" }), { status: 400, headers: corsHeaders });
+        const cleanId = id.replace(/[^a-zA-Z0-9_.]/g, '');
+        const targetUrl = cleanId.endsWith('.json') ? `https://www.jma.go.jp/bosai/quake/data/${cleanId}` : cleanId;
+        const jmaRes = await fetch(targetUrl, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+        if (!jmaRes.ok) return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: corsHeaders });
+        const text = await jmaRes.text();
+        return new Response(text, {
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }
+        });
+      }
+      if (url.pathname === "/api/typhoons") return await cachedKvQuery('typhoons', env, corsHeaders, (d) => pruneExpiredTyphoons(d));
+      if (url.pathname === "/api/status") {
+        let status: any = { lastUpdated: null, isSyncing: false, progress: 0 };
+        try {
+          const raw = await env.WEATHER_DATA_STORE.get('status');
+          if (raw) status = { ...status, ...JSON.parse(raw) };
+          const current = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+          const target = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+          status.current = current;
+          status.target = target;
+          if (target > 0) {
+            status.isSyncing = current < target;
+            status.progress = Math.min(100, Math.round((current / target) * 100));
+          } else {
+            status.isSyncing = false;
+            status.progress = 100;
+          }
+        } catch(e) {
+          console.error('Status error:', e);
+        }
+        return new Response(JSON.stringify(status), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       
       if (url.pathname === "/api/trigger-update") {
         await this.updateJmaData(env);
@@ -111,9 +165,36 @@ export default {
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      if (url.pathname === "/api/sync-step") {
+        let syncQueue: any[] = await env.WEATHER_DATA_STORE.get('sync_queue', { type: 'json' }) || [];
+        const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+        const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+        
+        if (syncQueue.length === 0) {
+            return new Response(JSON.stringify({ ok: true, isSyncing: false, progress: 100 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        
+        const msg = syncQueue.shift();
+        const batch = { messages: [{ body: msg }] };
+        await this.queue(batch, env, ctx); // Reuse the queue logic!
+        
+        await env.WEATHER_DATA_STORE.put('sync_queue', JSON.stringify(syncQueue));
+        
+        const progress = currentTarget > 0 ? Math.min(100, Math.round(((currentProgress + 1) / currentTarget) * 100)) : 0;
+        return new Response(JSON.stringify({ ok: true, isSyncing: syncQueue.length > 0, progress, current: currentProgress + 1, target: currentTarget }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       if (url.pathname === "/api/sync-initial") {
         await this.syncInitialJmaData(env);
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      if (url.pathname === "/api/debug-kv") {
+        const target = await env.WEATHER_DATA_STORE.get('sync_target');
+        const current = await env.WEATHER_DATA_STORE.get('sync_current');
+        const queueLastRun = await env.WEATHER_DATA_STORE.get('debug_queue_last_run');
+        const queueError = await env.WEATHER_DATA_STORE.get('debug_queue_error');
+        return new Response(JSON.stringify({ target, current, queueLastRun, queueError }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (url.pathname === "/api/clear-cache") {
@@ -121,6 +202,8 @@ export default {
         await env.WEATHER_DATA_STORE.delete('typhoons');
         await env.WEATHER_DATA_STORE.delete('warnings');
         await env.WEATHER_DATA_STORE.delete('earthquakes');
+        await env.WEATHER_DATA_STORE.delete('sync_target');
+        await env.WEATHER_DATA_STORE.delete('sync_current');
         await invalidateApiCaches();
         return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -134,7 +217,11 @@ export default {
 
 
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
-    let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
+    try {
+      await env.WEATHER_DATA_STORE.put('debug_queue_last_run', new Date().toISOString() + ' size: ' + batch.messages.length);
+      
+      console.log('QUEUE STARTED, batch size:', batch.messages.length);
+      let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
     let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
     let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
 
@@ -181,12 +268,22 @@ export default {
         await env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData));
     }
     if (typhoonsUpdated) {
+        typhoonsData = pruneExpiredTyphoons(typhoonsData);
+        await this.backfillTyphoonTracks(typhoonsData);
         await env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData));
     }
     
+    try {
+        const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+        await env.WEATHER_DATA_STORE.put('sync_current', (currentProgress + batch.messages.length).toString());
+    } catch(e) {}
+
     if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
         await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
         await invalidateApiCaches();
+    }
+    } catch (queueErr) {
+       await env.WEATHER_DATA_STORE.put('debug_queue_error', String(queueErr));
     }
   },
 
@@ -204,13 +301,8 @@ export default {
     let processedFeeds: string[] = await env.WEATHER_DATA_STORE.get('processed_feeds', { type: 'json' }) || [];
     if (isInitialSync) {
       processedFeeds = []; // Force clear cache for initial sync so it reparses
-      typhoonsData = [];
     }
     const processedFeedsSet = new Set(processedFeeds);
-
-    let warningsData: any[] = await env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }) || [];
-    let earthquakesData: any[] = await env.WEATHER_DATA_STORE.get('earthquakes', { type: 'json' }) || [];
-    let typhoonsData: any[] = await env.WEATHER_DATA_STORE.get('typhoons', { type: 'json' }) || [];
     
     let fetchCount = 0;
     const MAX_SUBREQUESTS = 45; // Cloudflare limits to 50
@@ -225,18 +317,26 @@ export default {
         fetchCount++;
         if (!res.ok) continue;
         const text = await res.text();
-        const feed = parser.parse(text);
-
-        if (!feed.feed || !feed.feed.entry) continue;
-
-        const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
-        let candidateEntries = entries.filter((e: any) => {
-          if (!e.id) return false;
-          const link = e.link?.['@_href'] || '';
-          return link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/) || 
-                 link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
-                 link.includes('_VPTW6') || link.includes('_VPTI5');
-        });
+        
+        let candidateEntries: any[] = [];
+        const entryBlocks = text.split('<entry>').slice(1);
+        for (const block of entryBlocks) {
+           const idMatch = block.match(/<id>(.*?)<\/id>/);
+           const updatedMatch = block.match(/<updated>(.*?)<\/updated>/);
+           const linkMatch = block.match(/<link[^>]*?href="(.*?)"/);
+           if (idMatch && updatedMatch && linkMatch) {
+               const link = linkMatch[1];
+               if (link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/) || 
+                   link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_') || 
+                   link.includes('_VPTW6') || link.includes('_VPTI5')) {
+                   candidateEntries.push({
+                       id: idMatch[1],
+                       updated: updatedMatch[1],
+                       link: { '@_href': linkMatch[1] }
+                   });
+               }
+           }
+        }
 
         if (isInitialSync) {
             const typhoons = candidateEntries.filter((e: any) => e.link?.['@_href'].includes('_VPTW'));
@@ -281,10 +381,23 @@ export default {
           processedFeedsSet.add(id);
         }
 
-        if (env.XML_QUEUE && messagesToSend.length > 0) {
-          for (let i = 0; i < messagesToSend.length; i += 100) {
-            const batch = messagesToSend.slice(i, i + 100).map(msg => ({ body: msg }));
-            await env.XML_QUEUE.sendBatch(batch);
+        if (messagesToSend.length > 0) {
+          try {
+            const currentTarget = parseInt(await env.WEATHER_DATA_STORE.get('sync_target') || '0');
+            const currentProgress = parseInt(await env.WEATHER_DATA_STORE.get('sync_current') || '0');
+            let syncQueue: any[] = await env.WEATHER_DATA_STORE.get('sync_queue', { type: 'json' }) || [];
+            
+            if (currentTarget > 0 && currentProgress >= currentTarget) {
+              await env.WEATHER_DATA_STORE.put('sync_target', messagesToSend.length.toString());
+              await env.WEATHER_DATA_STORE.put('sync_current', '0');
+              syncQueue = messagesToSend;
+            } else {
+              await env.WEATHER_DATA_STORE.put('sync_target', (currentTarget + messagesToSend.length).toString());
+              syncQueue.push(...messagesToSend);
+            }
+            await env.WEATHER_DATA_STORE.put('sync_queue', JSON.stringify(syncQueue));
+          } catch(e) {
+            console.error('Failed to update sync_queue in KV', e);
           }
         }
 
@@ -293,13 +406,10 @@ export default {
       }
     }
 
-    if (warningsUpdated || earthquakesUpdated || typhoonsUpdated) {
+    if (processedFeedsSet.size > processedFeeds.length) {
       // 履歴は最新の1000件のみ保持する
       const newProcessedFeeds = Array.from(processedFeedsSet).slice(-1000);
-            await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
-      await env.WEATHER_DATA_STORE.put('status', JSON.stringify({ lastUpdated: new Date().toISOString() }));
-      
-      await invalidateApiCaches();
+      await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(newProcessedFeeds));
     }
   },
 
@@ -383,34 +493,43 @@ export default {
             // 既存のレベル表記を一旦削除して正規化
             wName = wName.replace(/^レベル[１-５1-5]\s*/, '');
             
-            // 特別警報・警報の判定
-            if (wName.includes('特別警報')) level = 'special';
-            else if (wName.includes('警報')) level = 'warning';
+            // レベル5
+            if (wName.includes('特別警報') || wName.includes('氾濫発生')) {
+              level = 'special';
+            } 
+            // レベル4
+            else if (wName.includes('土砂災害警戒情報') || (wName.includes('高潮') && wName.includes('警報')) || wName.includes('氾濫危険')) {
+              level = 'warning_l4';
+            }
+            // レベル3
+            else if (wName.includes('警報') || wName.includes('氾濫警戒')) {
+              level = 'warning';
+            }
+            // レベル2
+            else {
+              level = 'advisory';
+            }
 
             // 大雨、洪水（氾濫）、高潮、土砂災害のみレベルを付与する
             if (wName.includes('大雨') || wName.includes('洪水') || wName.includes('氾濫') || wName.includes('高潮') || wName.includes('土砂災害')) {
               if (level === 'special') {
                 wName = `レベル5 ${wName}`;
+                level = 'level_5';
+              } else if (level === 'warning_l4') {
+                wName = `レベル4 ${wName}`;
+                level = 'level_4';
               } else if (level === 'warning') {
-                if (wName.includes('高潮')) {
-                  // 厳密には高潮警報・土砂災害警戒情報はレベル4相当ですが、フロントの表示やこれまでの仕様に合わせる場合はレベルを付与します
-                  // 今回は高潮警報と土砂災害はレベル4、大雨・洪水はレベル3とします
-                  wName = `レベル4 ${wName}`;
-                } else {
-                  wName = `レベル3 ${wName}`;
-                }
-              } else { // advisory
-                if (wName.includes('高潮')) {
-                  // 注意報でも高潮はレベル3相当の場合があるが基本は2
-                  // 簡易的にすべてレベル2注意報とする
-                  wName = `レベル2 ${wName}`; 
-                } else {
-                  wName = `レベル2 ${wName}`;
-                }
+                wName = `レベル3 ${wName}`;
+                level = 'level_3';
+              } else {
+                wName = `レベル2 ${wName}`;
+                level = 'level_2';
               }
-              // レベル文字列からwarningLevelを再設定
-              const levelMatch = wName.match(/レベル([1-5])/);
-              if (levelMatch) level = `level_${levelMatch[1]}`;
+            } else {
+              // それ以外（強風、波浪など）はレベル文字列を付けず、元のlevelのまま
+              if (level === 'special') level = 'special';
+              else if (level === 'warning_l4' || level === 'warning') level = 'warning';
+              else level = 'advisory';
             }
 
             warningsData.push({
@@ -424,6 +543,16 @@ export default {
   },
 
   processEarthquakeToMemory(report: any, xmlId: string, infoType: string, earthquakesData: any[]) {
+    const eventId = String(report.Head?.EventID || '');
+    if (infoType === '取消') {
+      if (eventId) {
+        for (let i = earthquakesData.length - 1; i >= 0; i--) {
+          if (earthquakesData[i].eventId === eventId) earthquakesData.splice(i, 1);
+        }
+      }
+      return;
+    }
+
     const earthquakes = Array.isArray(report.Body?.Earthquake) ? report.Body.Earthquake : (report.Body?.Earthquake ? [report.Body.Earthquake] : []);
     
     for (const earthquake of earthquakes) {
@@ -435,11 +564,23 @@ export default {
       if (typeof magnitude !== 'string' && typeof magnitude !== 'number') magnitude = '';
 
       const maxInt = report.Body?.Intensity?.Observation?.MaxInt;
+      const coord = parseQuakeCoordinate(earthquake.Hypocenter?.Area?.Coordinate);
 
       if (originTime && hypocenter) {
+        // 同一地震（EventID）の続報は1件にまとめる（震源情報のみの続報で震度を失わないようにする）
+        let prevMaxInt = '';
+        if (eventId) {
+          for (let i = earthquakesData.length - 1; i >= 0; i--) {
+            if (earthquakesData[i].eventId === eventId) {
+              prevMaxInt = prevMaxInt || earthquakesData[i].maxIntensity || '';
+              earthquakesData.splice(i, 1);
+            }
+          }
+        }
         earthquakesData.push({
-          xmlId, originTime, hypocenterName: hypocenter, 
-          magnitude: magnitude || '', maxIntensity: maxInt || '', depth: 0
+          xmlId, eventId, originTime, hypocenterName: hypocenter, 
+          magnitude: magnitude || '', maxIntensity: maxInt || prevMaxInt || '',
+          depth: coord?.depthKm ?? 0, lat: coord?.lat ?? null, lon: coord?.lon ?? null
         });
         
         // 直近200件に制限
@@ -447,6 +588,27 @@ export default {
           earthquakesData.shift(); // 古いものを削除
         }
       }
+    }
+  },
+
+  // 気象庁防災情報JSON（bosai）から発表中の台風の経路（過去の位置）を取得して補完する
+  async backfillTyphoonTracks(typhoonsData: any[]) {
+    try {
+      const res = await fetch('https://www.jma.go.jp/bosai/typhoon/data/targetTc.json', { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+      if (!res.ok) return;
+      const targets = await res.json() as any[];
+      for (const t of targets) {
+        const ty = typhoonsData.find((x: any) => String(x.tcNumber) === String(t.typhoonNumber));
+        if (!ty || !t.tropicalCyclone) continue;
+        const fRes = await fetch(`https://www.jma.go.jp/bosai/typhoon/data/${t.tropicalCyclone}/forecast.json`, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
+        if (!fRes.ok) continue;
+        const parts = await fRes.json() as any[];
+        const track = parts.find((p: any) => p.track)?.track;
+        if (track?.typhoon?.length) ty.track = track.typhoon;
+        if (track?.preTyphoon?.length) ty.preTrack = track.preTyphoon;
+      }
+    } catch (e) {
+      console.error('Failed to backfill typhoon tracks', e);
     }
   },
 
@@ -474,6 +636,7 @@ export default {
     let galeRadii: any[] = [];
     let stormCenterLat: number | null = null;
     let stormCenterLon: number | null = null;
+    let galeCenterLat: number | null = null;
     let galeCenterLon: number | null = null;
     let currentDateTimeStr = '';
     const forecasts: any[] = [];
@@ -772,13 +935,26 @@ export default {
     if (tcNumber) {
       if (!name) name = '熱帯低気圧';
       
+      // これまでの経路を引き継ぎ、前回の中心位置を追加する
+      let track: [number, number][] = [];
+      let preTrack: [number, number][] = [];
       for (let i = typhoonsData.length - 1; i >= 0; i--) {
         if (typhoonsData[i].tcNumber === tcNumber) {
+          const prev = typhoonsData[i];
+          track = Array.isArray(prev.track) ? prev.track : [];
+          preTrack = Array.isArray(prev.preTrack) ? prev.preTrack : [];
+          const pc = prev.current;
+          const last = track[track.length - 1];
+          if (pc?.lat && pc?.lon && pc.dateTime !== currentDateTimeStr && (!last || last[0] !== pc.lat || last[1] !== pc.lon)) {
+            track = [...track, [pc.lat, pc.lon]];
+          }
           typhoonsData.splice(i, 1);
         }
       }
       
       typhoonsData.push({
+        track,
+        preTrack,
         xmlId,
         tcNumber,
         name,
@@ -809,14 +985,21 @@ export default {
       const eqRes = await fetch("https://www.jma.go.jp/bosai/quake/data/list.json");
       if (eqRes.ok) {
         const eqList = await eqRes.json() as any[];
-        earthquakesData = eqList.slice(0, 200).map((eq: any) => ({
-          xmlId: eq.json || `initial-${eq.eid}`,
-          originTime: eq.at,
-          hypocenterName: eq.anm || '',
-          magnitude: eq.mag || '',
-          maxIntensity: eq.maxi || '',
-          depth: 0
-        }));
+        // 同一地震の続報は最新のもの（list.jsonは新しい順）だけを残す
+        const seen = new Set<string>();
+        earthquakesData = eqList.filter((eq: any) => eq.anm && !seen.has(eq.eid) && seen.add(eq.eid)).slice(0, 200).map((eq: any) => {
+          const coord = parseQuakeCoordinate(eq.cod);
+          return {
+            xmlId: eq.json || `initial-${eq.eid}`,
+            eventId: eq.eid,
+            originTime: eq.at,
+            hypocenterName: eq.anm || '',
+            magnitude: eq.mag || '',
+            maxIntensity: eq.maxi || '',
+            depth: coord?.depthKm ?? 0, lat: coord?.lat ?? null, lon: coord?.lon ?? null
+          };
+        }).reverse(); // 他の処理と同じく古い順で保持
+
       }
     } catch (e) {
       console.error("Failed to fetch initial earthquakes", e);

@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { normalizePrefectureName } from './index';
 
 describe('normalizePrefectureName', () => {
@@ -60,3 +60,39 @@ describe('processEarthquakeToMemory', () => {
     expect(earthquakesData[1].maxIntensity).toBe('2');
   });
 });
+
+import { pruneExpiredTyphoons, parseQuakeCoordinate } from './index';
+
+describe('pruneExpiredTyphoons', () => {
+  it('should remove typhoons older than 3 days', () => {
+    const now = new Date('2026-10-29T00:00:00Z').getTime();
+    const typhoons = [
+      { tcNumber: '2627', updatedAt: '2026-10-07T12:00:00Z' }, // 22 days ago -> expired
+      { tcNumber: '2630', updatedAt: '2026-10-25T12:00:00Z' }, // 3.5 days ago -> expired
+      { tcNumber: '2631', updatedAt: '2026-10-28T15:00:00Z' }, // < 1 day ago -> active
+    ];
+    const filtered = pruneExpiredTyphoons(typhoons, now);
+    expect(filtered.map(t => t.tcNumber)).toEqual(['2631']);
+  });
+});
+
+describe('parseQuakeCoordinate', () => {
+  it('should parse coordinate string into lat, lon, and depth in km', () => {
+    const coord = '+32.3+130.5-10000/';
+    expect(parseQuakeCoordinate(coord)).toEqual({
+      lat: 32.3,
+      lon: 130.5,
+      depthKm: 10
+    });
+  });
+
+  it('should handle depth when missing', () => {
+    const coord = '+35.1+139.8/';
+    expect(parseQuakeCoordinate(coord)).toEqual({
+      lat: 35.1,
+      lon: 139.8,
+      depthKm: null
+    });
+  });
+});
+
