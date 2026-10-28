@@ -77,20 +77,32 @@ interface StationItem {
 export default function EarthquakeDetailView({
   earthquake,
   onBack,
+  onRefresh,
 }: {
   earthquake: EarthquakeItem;
   onBack: () => void;
+  onRefresh?: () => Promise<void>;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
   const [loadingDetail, setLoadingDetail] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshSuccess, setRefreshSuccess] = useState(false);
   const [hypoLat, setHypoLat] = useState<number | null>(earthquake.lat ?? null);
   const [hypoLon, setHypoLon] = useState<number | null>(earthquake.lon ?? null);
   const [depthKm, setDepthKm] = useState<number | string>(earthquake.depth ?? 0);
   const [stations, setStations] = useState<StationItem[]>([]);
   const [intensityGroups, setIntensityGroups] = useState<IntensityGroup[]>([]);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // earthquake propが更新されたらローカルstateも同期
+  useEffect(() => {
+    if (earthquake.lat != null) setHypoLat(earthquake.lat);
+    if (earthquake.lon != null) setHypoLon(earthquake.lon);
+    if (earthquake.depth != null) setDepthKm(earthquake.depth);
+  }, [earthquake.lat, earthquake.lon, earthquake.depth, earthquake.maxIntensity, earthquake.hypocenterName]);
 
   const formattedMaxInt = formatIntensity(earthquake.maxIntensity);
 
@@ -246,7 +258,26 @@ export default function EarthquakeDetailView({
     return () => {
       isCancelled = true;
     };
-  }, [earthquake]);
+  }, [earthquake, refreshKey]);
+
+  // 個別の地震情報の更新処理
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshSuccess(false);
+    try {
+      if (onRefresh) {
+        await onRefresh();
+      }
+      setRefreshKey(k => k + 1);
+      setRefreshSuccess(true);
+      setTimeout(() => setRefreshSuccess(false), 3000);
+    } catch (e) {
+      console.error('Failed to refresh earthquake detail', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Leaflet 地図の描画
   useEffect(() => {
@@ -278,17 +309,14 @@ export default function EarthquakeDetailView({
     if (hypoLat != null && hypoLon != null) {
       boundsPoints.push([hypoLat, hypoLon]);
       const hypocenterIcon = L.divIcon({
-        html: `<div style="
-          width: 32px; height: 32px;
-          display: flex; align-items: center; justify-content: center;
-          background: #dc2626; color: #ffffff;
-          border-radius: 50%;
-          font-weight: 900; font-size: 20px;
-          box-shadow: 0 0 16px rgba(220, 38, 38, 0.8), 0 2px 6px rgba(0,0,0,0.4);
-          border: 3px solid #ffffff;
-        ">✕</div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
+        html: `<div style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+          <svg width="28" height="28" viewBox="0 0 28 28">
+            <path d="M 5 5 L 23 23 M 23 5 L 5 23" stroke="#000000" stroke-width="7" stroke-linecap="round" />
+            <path d="M 5 5 L 23 23 M 23 5 L 5 23" stroke="#FF2800" stroke-width="3" stroke-linecap="round" />
+          </svg>
+        </div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
         className: ''
       });
 
@@ -361,7 +389,7 @@ export default function EarthquakeDetailView({
         flexWrap: 'wrap',
         gap: '12px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <button
             onClick={onBack}
             style={{
@@ -377,6 +405,36 @@ export default function EarthquakeDetailView({
           >
             ← 一覧に戻る
           </button>
+
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            style={{
+              padding: '6px 14px',
+              backgroundColor: refreshing ? '#94a3b8' : '#2563eb',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: refreshing ? 'not-allowed' : 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'background-color 0.15s ease'
+            }}
+            title="最新の震度情報・続報を再取得します"
+          >
+            <span style={{ display: 'inline-block', transform: refreshing ? 'rotate(360deg)' : 'none', transition: 'transform 0.5s linear' }}>🔄</span>
+            {refreshing ? '更新中...' : '最新情報に更新'}
+          </button>
+
+          {refreshSuccess && (
+            <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600, animation: 'fadeIn 0.2s ease-in' }}>
+              ✓ 最新情報を取得しました
+            </span>
+          )}
+
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1e293b' }}>
             🌍 {earthquake.hypocenterName} を震源とする地震
           </h2>

@@ -1,11 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import EarthquakeDetailView, { formatIntensity, getSeismicIntensityColor } from './EarthquakeDetailView';
 import { drawTyphoon } from './utils/drawTyphoon';
+import { getRegionFromHypocenter, getRegionOrder, deduplicateEarthquakes, REGIONS } from './utils/earthquakeUtils';
 
 const API_BASE = 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 const EXPIRE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+// 気象警報の地方表示に準拠した共通リンクスタイル
+const LINK_STYLE: React.CSSProperties = {
+  fontWeight: 500,
+  color: '#1e293b',
+  cursor: 'pointer',
+  textDecoration: 'underline',
+  textDecorationColor: '#93c5fd',
+  textUnderlineOffset: '4px',
+};
+
+interface HistoryState {
+  tab: 'warnings' | 'earthquakes' | 'typhoons';
+  viewMode?: 'prefecture' | 'region' | 'municipality';
+  selectedParentArea?: string | null;
+  quakeId?: string | null;
+  typhoonNumber?: string | null;
+  isInitial?: boolean;
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'warnings' | 'earthquakes' | 'typhoons'>('warnings');
@@ -23,12 +43,85 @@ export default function App() {
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
   const [use24HourFormat, setUse24HourFormat] = useState(true);
 
+  // 地震情報のソートモード
+  const [quakeSortMode, setQuakeSortMode] = useState<'time_desc' | 'time_asc' | 'region' | 'intensity'>('time_desc');
+
+  // Refで最新データを保持（popstate時の検索用）
+  const earthquakesRef = useRef<any[]>([]);
+  const typhoonsRef = useRef<any[]>([]);
+  earthquakesRef.current = earthquakes;
+  typhoonsRef.current = typhoons;
+
+  // ナビゲーション状態更新ヘルパー（pushState）
+  const pushNavState = (updates: Partial<HistoryState>) => {
+    const currentState: HistoryState = {
+      tab: updates.tab ?? activeTab,
+      viewMode: updates.viewMode ?? viewMode,
+      selectedParentArea: updates.selectedParentArea !== undefined ? updates.selectedParentArea : selectedParentArea,
+      quakeId: updates.quakeId !== undefined ? updates.quakeId : (selectedEarthquake?.xmlId || selectedEarthquake?.eventId || null),
+      typhoonNumber: updates.typhoonNumber !== undefined ? updates.typhoonNumber : (selectedTyphoon ? String(selectedTyphoon.tcNumber) : null),
+    };
+    window.history.pushState(currentState, '');
+  };
+
+  // 初回ロード時: 履歴のルート（初期状態）を replaceState で登録（push ではないので外部サイトへの「戻る」が維持される）
+  useEffect(() => {
+    if (!window.history.state || !window.history.state.tab) {
+      const initialState: HistoryState = {
+        tab: 'warnings',
+        viewMode: 'prefecture',
+        selectedParentArea: null,
+        quakeId: null,
+        typhoonNumber: null,
+        isInitial: true,
+      };
+      window.history.replaceState(initialState, '');
+    }
+  }, []);
+
+  // マウスの戻るボタン（popstate）のリスナー
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      const state = e.state as HistoryState | null;
+      if (state && state.tab) {
+        // サイト内履歴が存在する場合はその状態を復元
+        setActiveTab(state.tab);
+        if (state.viewMode) setViewMode(state.viewMode);
+        setSelectedParentArea(state.selectedParentArea || null);
+
+        if (state.quakeId) {
+          const match = earthquakesRef.current.find(eq => eq.xmlId === state.quakeId || eq.eventId === state.quakeId);
+          setSelectedEarthquake(match || null);
+        } else {
+          setSelectedEarthquake(null);
+        }
+
+        if (state.typhoonNumber) {
+          const match = typhoonsRef.current.find(t => String(t.tcNumber) === state.typhoonNumber);
+          setSelectedTyphoon(match || null);
+        } else {
+          setSelectedTyphoon(null);
+        }
+      }
+      // stateがない場合（初期アクセスより前の履歴）は、ブラウザ標準で直前の別サイトへ戻る
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // 画面上の戻るボタンハンドラー
+  const handleNavBack = () => {
+    window.history.back();
+  };
+
+  // 初回データ読み込み
   const fetchData = async (bustCache = false) => {
     setLoading(true);
     setError('');
     try {
       if (bustCache) {
-        await fetch(`${API_BASE}/api/trigger-update`);
+        await fetch(`${API_BASE}/api/trigger-update`).catch(() => {});
       }
       const cacheBuster = bustCache ? `?_t=${Date.now()}` : '';
       const [warningsRes, earthquakesRes, typhoonsRes, statusRes] = await Promise.all([
@@ -48,11 +141,14 @@ export default function App() {
       setWarnings(await warningsRes.json());
       const eqData = await earthquakesRes.json();
       setEarthquakes(eqData);
+
+      // 続報が取得できた場合、開いている詳細情報も最新値で上書き同期する
       setSelectedEarthquake((prev: any) => {
         if (!prev) return null;
         const updated = eqData.find((eq: any) => (prev.eventId && eq.eventId === prev.eventId) || eq.xmlId === prev.xmlId || eq.originTime === prev.originTime);
         return updated || prev;
       });
+
       const rawTyphoons = await typhoonsRes.json();
       const now = Date.now();
       const activeTyphoons = Array.isArray(rawTyphoons) ? rawTyphoons.filter((t: any) => {
@@ -64,9 +160,6 @@ export default function App() {
       if (statusRes.ok) {
         const statusData = await statusRes.json();
         setLastUpdated(statusData.lastUpdated || null);
-        if (statusData.lastUpdated) {
-          console.log("【システム更新検証】最新の更新時刻:", statusData.lastUpdated);
-        }
       }
     } catch (e: any) {
       setError(e.message === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : e.message);
@@ -78,7 +171,7 @@ export default function App() {
     fetchData();
     const interval = setInterval(() => {
       fetchData();
-    }, 300000); // 5 minutes
+    }, 300000); // 5分ごと
     return () => clearInterval(interval);
   }, []);
 
@@ -94,13 +187,11 @@ export default function App() {
         setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
         
         if (data.isSyncing) {
-            console.log(`[Sync Status] isSyncing: ${data.isSyncing}, progress: ${data.progress}% (target: ${data.target || '?'}, current: ${data.current || '?'})`);
-            // Poll sync-step to process the backend KV queue
-            const stepRes = await fetch(`${API_BASE}/api/sync-step`);
-            const stepData = await stepRes.json();
-            if (stepData.ok) {
-                setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
-            }
+          const stepRes = await fetch(`${API_BASE}/api/sync-step`);
+          const stepData = await stepRes.json();
+          if (stepData.ok) {
+            setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
+          }
         }
       } catch (e) {
         console.error('[Sync Status Error]', e);
@@ -113,7 +204,7 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  // viewModeに合致するデータだけをフィルタリング
+  // 気象警報のフィルタリング
   const filteredWarnings = warnings.filter((w: any) => {
     if (viewMode === 'prefecture') return w.areaType === 'prefecture';
     if (viewMode === 'region') return w.areaType === 'region' || w.areaType === 'subregion';
@@ -126,7 +217,6 @@ export default function App() {
     return false;
   });
 
-  // 最新の発表日時のデータのみを地域ごとにグループ化
   const groupedWarnings = Object.values(filteredWarnings.reduce((acc: any, w: any) => {
     const areaName = w.region || w.area;
     if (!acc[areaName] || new Date(w.reportDateTime) > new Date(acc[areaName].reportDateTime)) {
@@ -139,39 +229,38 @@ export default function App() {
     return acc;
   }, {})).sort((a: any, b: any) => new Date(b.reportDateTime).getTime() - new Date(a.reportDateTime).getTime());
 
-  // 戻るボタンの処理（画面上）
-  const handleBack = () => {
-    if (selectedParentArea) {
-      setSelectedParentArea(null);
-      setViewMode('prefecture');
-      // ブラウザの履歴も更新する
-      if (window.history.state?.area) {
-        window.history.back();
-      }
-    }
-  };
+  // === 地震情報: 秒単位重複の統合（最新値マージ） ===
+  const uniqueEarthquakes = useMemo(() => {
+    return deduplicateEarthquakes(earthquakes);
+  }, [earthquakes]);
 
-  // 選択領域が変わったときにブラウザ履歴にpushする
-  useEffect(() => {
-    if (selectedParentArea && window.history.state?.area !== selectedParentArea) {
-      window.history.pushState({ area: selectedParentArea }, '');
+  // === 地震情報: ソート処理 ===
+  const sortedEarthquakes = useMemo(() => {
+    const list = [...uniqueEarthquakes];
+    if (quakeSortMode === 'time_desc') {
+      return list.sort((a, b) => new Date(b.originTime).getTime() - new Date(a.originTime).getTime());
     }
-  }, [selectedParentArea]);
-
-  // ブラウザの戻るボタン（popstate）の検知
-  useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      if (e.state && e.state.area) {
-        setSelectedParentArea(e.state.area);
-        setViewMode('municipality');
-      } else {
-        setSelectedParentArea(null);
-        setViewMode('prefecture');
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+    if (quakeSortMode === 'time_asc') {
+      return list.sort((a, b) => new Date(a.originTime).getTime() - new Date(b.originTime).getTime());
+    }
+    if (quakeSortMode === 'intensity') {
+      const order = ['7', '6強', '6弱', '5強', '5弱', '4', '3', '2', '1'];
+      return list.sort((a, b) => {
+        const iA = order.indexOf(formatIntensity(a.maxIntensity));
+        const iB = order.indexOf(formatIntensity(b.maxIntensity));
+        return (iA === -1 ? 999 : iA) - (iB === -1 ? 999 : iB);
+      });
+    }
+    if (quakeSortMode === 'region') {
+      return list.sort((a, b) => {
+        const rA = getRegionOrder(getRegionFromHypocenter(a.hypocenterName));
+        const rB = getRegionOrder(getRegionFromHypocenter(b.hypocenterName));
+        if (rA !== rB) return rA - rB;
+        return new Date(b.originTime).getTime() - new Date(a.originTime).getTime();
+      });
+    }
+    return list;
+  }, [uniqueEarthquakes, quakeSortMode]);
 
   return (
     <div style={{ minHeight: '100vh', padding: '16px', backgroundColor: '#f1f5f9', color: '#0f172a' }}>
@@ -252,9 +341,11 @@ export default function App() {
               <button
                 key={tab.id}
                 onClick={() => {
-                  setActiveTab(tab.id as any);
-                  if (tab.id !== 'earthquakes') setSelectedEarthquake(null);
-                  if (tab.id !== 'typhoons') setSelectedTyphoon(null);
+                  const targetTab = tab.id as any;
+                  setActiveTab(targetTab);
+                  if (targetTab !== 'earthquakes') setSelectedEarthquake(null);
+                  if (targetTab !== 'typhoons') setSelectedTyphoon(null);
+                  pushNavState({ tab: targetTab, quakeId: null, typhoonNumber: null });
                 }}
                 style={{
                   flex: 1, padding: '12px 16px', textAlign: 'center', fontWeight: 600, fontSize: '0.875rem',
@@ -270,12 +361,13 @@ export default function App() {
           </div>
 
           <div>
+            {/* 警報タブのコントロールバー */}
             {activeTab === 'warnings' && (
               <div style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 {selectedParentArea ? (
                   <>
                     <button 
-                      onClick={handleBack}
+                      onClick={handleNavBack}
                       style={{ padding: '4px 12px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
                     >
                       ← 都道府県に戻る
@@ -290,8 +382,10 @@ export default function App() {
                     <select 
                       value={viewMode} 
                       onChange={(e) => {
-                        setViewMode(e.target.value as any);
+                        const newMode = e.target.value as any;
+                        setViewMode(newMode);
                         setSelectedParentArea(null);
+                        pushNavState({ viewMode: newMode, selectedParentArea: null });
                       }}
                       style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem', backgroundColor: '#fff', color: '#475569' }}
                     >
@@ -301,6 +395,43 @@ export default function App() {
                     </select>
                   </>
                 )}
+              </div>
+            )}
+
+            {/* 地震タブのコントロールバー（地方別ソート・並び替え） */}
+            {activeTab === 'earthquakes' && !selectedEarthquake && (
+              <div style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>並び順:</span>
+                  {[
+                    { id: 'time_desc', label: '発生日時（新しい順）' },
+                    { id: 'region', label: '地方別（北から順）' },
+                    { id: 'intensity', label: '最大震度順' },
+                    { id: 'time_asc', label: '発生日時（古い順）' },
+                  ].map(sm => (
+                    <button
+                      key={sm.id}
+                      onClick={() => setQuakeSortMode(sm.id as any)}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        borderRadius: '4px',
+                        border: '1px solid',
+                        borderColor: quakeSortMode === sm.id ? '#2563eb' : '#cbd5e1',
+                        backgroundColor: quakeSortMode === sm.id ? '#eff6ff' : '#ffffff',
+                        color: quakeSortMode === sm.id ? '#1d4ed8' : '#475569',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {sm.label}
+                    </button>
+                  ))}
+                </div>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  全 {uniqueEarthquakes.length} 件（秒単位の重複統合済み）
+                </span>
               </div>
             )}
 
@@ -318,11 +449,28 @@ export default function App() {
                   )}
                   {activeTab === 'earthquakes' && !selectedEarthquake && (
                     <tr style={{ color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>発生日時</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>震源地</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>マグニチュード</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>最大震度</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>詳細</th>
+                      <th 
+                        style={{ padding: '12px 16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}
+                        onClick={() => setQuakeSortMode(m => m === 'time_desc' ? 'time_asc' : 'time_desc')}
+                        title="クリックで日時順を切り替え"
+                      >
+                        発生日時 {quakeSortMode === 'time_desc' ? '▼' : quakeSortMode === 'time_asc' ? '▲' : ''}
+                      </th>
+                      <th 
+                        style={{ padding: '12px 16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}
+                        onClick={() => setQuakeSortMode('region')}
+                        title="クリックで地方別にソート"
+                      >
+                        震源地 {quakeSortMode === 'region' ? '▼' : ''}
+                      </th>
+                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>規模</th>
+                      <th 
+                        style={{ padding: '12px 16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}
+                        onClick={() => setQuakeSortMode('intensity')}
+                        title="クリックで最大震度順にソート"
+                      >
+                        最大震度 {quakeSortMode === 'intensity' ? '▼' : ''}
+                      </th>
                     </tr>
                   )}
                   {activeTab === 'typhoons' && !selectedTyphoon && (
@@ -402,129 +550,142 @@ export default function App() {
                                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                                 >
-                              <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
-                              <td 
-                                style={{
-                                  padding: '12px 16px', fontWeight: 500, color: '#1e293b', verticalAlign: 'middle',
-                                  cursor: (viewMode === 'prefecture' || viewMode === 'region') ? 'pointer' : 'default',
-                                  textDecoration: (viewMode === 'prefecture' || viewMode === 'region') ? 'underline' : 'none',
-                                  textDecorationColor: '#93c5fd',
-                                  textUnderlineOffset: '4px',
-                                }}
-                                onClick={() => {
-                                  if (viewMode === 'prefecture' || viewMode === 'region') {
-                                    setSelectedParentArea(row.prefecture || row.area);
-                                    setViewMode('municipality');
-                                  }
-                                }}
-                              >
-                                {viewMode !== 'prefecture' && row.prefecture ? `${row.prefecture} ${row.area}` : row.area}
-                              </td>
-                              <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                  {row.items
-                                    .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
-                                    .map((w: any, idx: number) => {
-                                      const displayName = formatWarningName(w.warningName);
-                                      return (
-                                        <span key={idx} style={{
-                                          padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                                          whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                          ...getWarningColor(w.warningLevel)
-                                        }}>
-                                          {displayName}
-                                        </span>
-                                      );
-                                    })}
-                                </div>
+                                  <td style={{ padding: '12px 16px', color: '#64748b', verticalAlign: 'middle' }}>{new Date(row.reportDateTime).toLocaleString()}</td>
+                                  <td 
+                                    style={{
+                                      padding: '12px 16px',
+                                      verticalAlign: 'middle',
+                                      ...((viewMode === 'prefecture' || viewMode === 'region') ? LINK_STYLE : { fontWeight: 500, color: '#1e293b' })
+                                    }}
+                                    onClick={() => {
+                                      if (viewMode === 'prefecture' || viewMode === 'region') {
+                                        const parent = row.prefecture || row.area;
+                                        setSelectedParentArea(parent);
+                                        setViewMode('municipality');
+                                        pushNavState({ viewMode: 'municipality', selectedParentArea: parent });
+                                      }
+                                    }}
+                                  >
+                                    {viewMode !== 'prefecture' && row.prefecture ? `${row.prefecture} ${row.area}` : row.area}
+                                  </td>
+                                  <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                      {row.items
+                                        .sort((a: any, b: any) => getWarningPriority(a.warningLevel) - getWarningPriority(b.warningLevel))
+                                        .map((w: any, idx: number) => {
+                                          const displayName = formatWarningName(w.warningName);
+                                          return (
+                                            <span key={idx} style={{
+                                              padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
+                                              whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                              ...getWarningColor(w.warningLevel)
+                                            }}>
+                                              {displayName}
+                                            </span>
+                                          );
+                                        })}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+
+                  {/* 地震情報一覧 */}
+                  {activeTab === 'earthquakes' && !selectedEarthquake && (() => {
+                    // 地方別ソート時のグループ化
+                    if (quakeSortMode === 'region') {
+                      const byRegion: Record<string, any[]> = {};
+                      sortedEarthquakes.forEach(eq => {
+                        const r = getRegionFromHypocenter(eq.hypocenterName);
+                        if (!byRegion[r]) byRegion[r] = [];
+                        byRegion[r].push(eq);
+                      });
+
+                      return REGIONS.map(reg => {
+                        const list = byRegion[reg];
+                        if (!list || list.length === 0) return null;
+                        return (
+                          <React.Fragment key={reg}>
+                            <tr style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+                              <td colSpan={4} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
+                                📍 {reg} ({list.length}件)
                               </td>
                             </tr>
-                                ))}
-                              </React.Fragment>
-                            ))}
+                            {list.map((eq, index) => renderEarthquakeRow(eq, index))}
                           </React.Fragment>
                         );
                       });
-                    })()}
-                  {activeTab === 'earthquakes' && !selectedEarthquake && [...earthquakes]
-                    .sort((a, b) => new Date(b.originTime).getTime() - new Date(a.originTime).getTime())
-                    .map((eq, index) => {
-                      const formattedIntensity = formatIntensity(eq.maxIntensity);
-                      
-                      return (
-                      <tr
-                        key={eq.xmlId || index}
-                        className="slide-in-row fade-update"
-                        style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                        onClick={() => setSelectedEarthquake(eq)}
-                      >
-                        <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(eq.originTime).toLocaleString()}</td>
-                        <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1d4ed8', textDecoration: 'underline', textDecorationColor: '#93c5fd', textUnderlineOffset: '4px' }}>
-                          {eq.hypocenterName}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1e293b' }}>M{eq.magnitude}</td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap', ...getSeismicIntensityColor(formattedIntensity) }}>
-                            震度 {formattedIntensity}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <span style={{
-                            padding: '4px 10px',
-                            backgroundColor: '#e0e7ff',
-                            color: '#3730a3',
-                            borderRadius: '4px',
-                            fontWeight: 600,
-                            fontSize: '0.75rem',
-                            display: 'inline-block'
-                          }}>
-                            詳細地図 →
-                          </span>
-                        </td>
-                      </tr>
-                      );
-                    })}
+                    }
+
+                    // 通常ソート
+                    return sortedEarthquakes.map((eq, index) => renderEarthquakeRow(eq, index));
+                  })()}
+
+                  {/* 地震詳細ビュー */}
                   {activeTab === 'earthquakes' && selectedEarthquake && (
                     <tr>
-                      <td colSpan={5} style={{ padding: 0 }}>
+                      <td colSpan={4} style={{ padding: 0 }}>
                         <EarthquakeDetailView
                           earthquake={selectedEarthquake}
-                          onBack={() => setSelectedEarthquake(null)}
+                          onBack={handleNavBack}
+                          onRefresh={() => fetchData(true)}
                         />
                       </td>
                     </tr>
                   )}
+
+                  {/* 台風情報一覧 */}
                   {activeTab === 'typhoons' && !selectedTyphoon && typhoons.map((ty, index) => {
                     const num = String(ty.tcNumber);
                     const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
                     const displayName = `台風${typhoonNum}号（${ty.name}）`;
                     const intensityText = [ty.current?.intensityClass, ty.current?.areaClass].filter(Boolean).join(' / ') || '—';
                     return (
-                    <tr key={ty.tcNumber || index} className="slide-in-row fade-update" style={{ borderBottom: '1px solid #f1f5f9' }}
-                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                    >
-                      <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1d4ed8', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#93c5fd', textUnderlineOffset: '4px' }}
-                        onClick={() => setSelectedTyphoon(ty)}
-                      >{displayName}</td>
-                      <td style={{ padding: '12px 16px', color: '#1e293b' }}>{intensityText}</td>
-                      <td style={{ padding: '12px 16px', color: '#1e293b' }}>{ty.current?.pressure ? `${ty.current.pressure} hPa` : '—'}</td>
-                      <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(ty.updatedAt).toLocaleString()}</td>
-                    </tr>
+                      <tr 
+                        key={ty.tcNumber || index} 
+                        className="slide-in-row fade-update" 
+                        style={{ borderBottom: '1px solid #f1f5f9' }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                      >
+                        <td 
+                          style={{ padding: '12px 16px', verticalAlign: 'middle', ...LINK_STYLE }}
+                          onClick={() => {
+                            setSelectedTyphoon(ty);
+                            pushNavState({ typhoonNumber: String(ty.tcNumber) });
+                          }}
+                        >
+                          {displayName}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: '#1e293b' }}>{intensityText}</td>
+                        <td style={{ padding: '12px 16px', color: '#1e293b' }}>{ty.current?.pressure ? `${ty.current.pressure} hPa` : '—'}</td>
+                        <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(ty.updatedAt).toLocaleString()}</td>
+                      </tr>
                     );
                   })}
+
+                  {/* 台風詳細ビュー */}
                   {activeTab === 'typhoons' && selectedTyphoon && (
-                    <tr><td colSpan={4} style={{ padding: 0 }}>
-                      <TyphoonDetailView typhoon={selectedTyphoon} onBack={() => setSelectedTyphoon(null)} use24HourFormat={use24HourFormat} />
-                    </td></tr>
+                    <tr>
+                      <td colSpan={4} style={{ padding: 0 }}>
+                        <TyphoonDetailView 
+                          typhoon={selectedTyphoon} 
+                          onBack={handleNavBack} 
+                          use24HourFormat={use24HourFormat} 
+                        />
+                      </td>
+                    </tr>
                   )}
                   
                   {!loading && (
                     (activeTab === 'warnings' && warnings.length === 0) ||
-                    (activeTab === 'earthquakes' && earthquakes.length === 0) ||
+                    (activeTab === 'earthquakes' && uniqueEarthquakes.length === 0) ||
                     (activeTab === 'typhoons' && typhoons.length === 0)
                   ) && (
                     <tr>
@@ -549,6 +710,56 @@ export default function App() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
+
+  // 地震行レンダリング関数（気象警報の地方リンクスタイルに完全準拠）
+  function renderEarthquakeRow(eq: any, index: number) {
+    const formattedIntensity = formatIntensity(eq.maxIntensity);
+    const regionName = getRegionFromHypocenter(eq.hypocenterName);
+
+    return (
+      <tr
+        key={eq.xmlId || eq.eventId || index}
+        className="slide-in-row fade-update"
+        style={{ borderBottom: '1px solid #f1f5f9' }}
+        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+      >
+        <td style={{ padding: '12px 16px', color: '#64748b' }}>
+          {new Date(eq.originTime).toLocaleString()}
+        </td>
+        <td 
+          style={{ padding: '12px 16px', verticalAlign: 'middle', ...LINK_STYLE }}
+          onClick={() => {
+            setSelectedEarthquake(eq);
+            pushNavState({ quakeId: eq.xmlId || eq.eventId });
+          }}
+          title="クリックして地震詳細・震度マップを表示"
+        >
+          {eq.hypocenterName}
+          {quakeSortMode !== 'region' && (
+            <span style={{ fontSize: '0.75rem', color: '#64748b', textDecoration: 'none', marginLeft: '6px', fontWeight: 400 }}>
+              ({regionName})
+            </span>
+          )}
+        </td>
+        <td style={{ padding: '12px 16px', color: '#1e293b' }}>
+          {eq.magnitude ? `M${eq.magnitude}` : '—'}
+        </td>
+        <td style={{ padding: '12px 16px' }}>
+          <span style={{
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            ...getSeismicIntensityColor(formattedIntensity)
+          }}>
+            震度 {formattedIntensity}
+          </span>
+        </td>
+      </tr>
+    );
+  }
 }
 
 // === 台風詳細ビュー（Leaflet地図＋情報パネル） ===
@@ -652,11 +863,11 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         <InfoCard label="中心気圧" value={cur.pressure ? `${cur.pressure} hPa` : '—'} />
         <InfoCard label="最大風速" value={cur.maxWind ? `${cur.maxWind} m/s` : '—'} />
         <InfoCard label="最大瞬間風速" value={cur.gustWind ? `${cur.gustWind} m/s` : '—'} />
-        <InfoCard label="現在位置" value={cur.location || '—'} />
-        <InfoCard label="進行方向" value={cur.direction ? `${cur.direction} ${cur.speedKmh}km/h` : '—'} />
+        <InfoCard label="進行方向・速さ" value={`${cur.direction || '—'} ${cur.speed ? `${cur.speed} km/h` : ''}`} />
+        <InfoCard label="位置" value={cur.location || `${cur.lat?.toFixed(1)}°N, ${cur.lon?.toFixed(1)}°E`} />
       </div>
 
-      {/* 予報テーブル */}
+      {/* 進路予報一覧 */}
       {typhoon.forecasts && typhoon.forecasts.length > 0 && (
         <div style={{ padding: '0 20px 20px' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b', margin: '0 0 12px 0' }}>進路予報</h3>
@@ -688,51 +899,43 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-      <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>{label}</div>
-      <div style={{ fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>{value}</div>
+    <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px' }}>{label}</div>
+      <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{value}</div>
     </div>
   );
 }
 
-// 警報名の表示フォーマット（全角数字→半角数字変換とスペース挿入）
-function formatWarningName(name: string): string {
-  const match = name.match(/^レベル([１-５1-5])(.+)$/);
-  if (match) {
-    const numMap: Record<string, string> = { '１':'1', '２':'2', '３':'3', '４':'4', '５':'5' };
-    const halfNum = numMap[match[1]] || match[1];
-    return `レベル${halfNum} ${match[2]}`;
-  }
-  return name;
-}
-
-// 警戒レベル表示の優先度（高い方が先に表示）
+// 警報レベルの優先順位
 function getWarningPriority(level: string): number {
-  switch (level) {
-    case 'level_5': case 'special': return 0;
-    case 'level_4': return 1;
-    case 'level_3': case 'warning': return 2;
-    case 'level_2': case 'advisory': return 3;
-    default: return 4;
-  }
+  if (level === 'level_5' || level === 'special') return 1;
+  if (level === 'level_4') return 2;
+  if (level === 'level_3' || level === 'warning') return 3;
+  if (level === 'level_2' || level === 'advisory') return 4;
+  return 5;
 }
 
-// 警戒レベルに応じた色分け（2026年新基準対応）
+// 警報名フォーマット
+function formatWarningName(name: string): string {
+  if (!name) return '';
+  return name.replace(/^レベル\d+\s*/, '');
+}
+
+// 警報カラー
 function getWarningColor(level: string): React.CSSProperties {
   switch (level) {
     case 'level_5':
     case 'special':
-      return { backgroundColor: '#1e003b', color: '#ffffff' }; // レベル5: 黒紫
+      return { backgroundColor: '#7e22ce', color: '#ffffff' };
     case 'level_4':
-      return { backgroundColor: '#800080', color: '#ffffff' }; // レベル4: 紫
+      return { backgroundColor: '#dc2626', color: '#ffffff' };
     case 'level_3':
     case 'warning':
-      return { backgroundColor: '#ff2800', color: '#ffffff' }; // レベル3: 赤
+      return { backgroundColor: '#ea580c', color: '#ffffff' };
     case 'level_2':
     case 'advisory':
-      return { backgroundColor: '#f2e700', color: '#333333' }; // レベル2: 黄
+      return { backgroundColor: '#eab308', color: '#000000' };
     default:
-      return { backgroundColor: '#f3f4f6', color: '#333333' };
+      return { backgroundColor: '#64748b', color: '#ffffff' };
   }
 }
-
