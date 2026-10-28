@@ -420,12 +420,11 @@ export default function EarthquakeDetailView({
               fontSize: '0.85rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '6px',
               transition: 'background-color 0.15s ease'
             }}
             title="最新の震度情報・続報を再取得します"
           >
-            <span style={{ display: 'inline-block', transform: refreshing ? 'rotate(360deg)' : 'none', transition: 'transform 0.5s linear' }}>🔄</span>
+            <i className={`fa-solid fa-arrows-rotate${refreshing ? ' fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
             {refreshing ? '更新中...' : '最新情報に更新'}
           </button>
 
