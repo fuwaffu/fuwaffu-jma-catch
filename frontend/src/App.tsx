@@ -35,9 +35,24 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [flapEpoch, setFlapEpoch] = useState(0);
+  const [animEpoch, setAnimEpoch] = useState(0);
+  const [isFadingOut, setIsFadingOut] = useState(false);
+  const [updatedRowKeys, setUpdatedRowKeys] = useState<Set<string>>(new Set());
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
   const [selectedEarthquake, setSelectedEarthquake] = useState<any | null>(null);
+
+  const prevSigsRef = useRef<Map<string, string>>(new Map());
+  const hasInitialLoadedRef = useRef(false);
+
+  const runWithFadeTransition = (applyChange: () => void) => {
+    setIsFadingOut(true);
+    setTimeout(() => {
+      applyChange();
+      setUpdatedRowKeys(new Set());
+      setAnimEpoch(c => c + 1);
+      setIsFadingOut(false);
+    }, 170);
+  };
 
   const [viewMode, setViewMode] = useState<'prefecture' | 'region' | 'municipality'>('prefecture');
   const [selectedParentArea, setSelectedParentArea] = useState<string | null>(null);
@@ -135,8 +150,48 @@ export default function App() {
         throw new Error('Failed to fetch one or more APIs');
       }
 
-      setWarnings(await warningsRes.json());
+      const nextWarnings = await warningsRes.json();
       const eqData = await earthquakesRes.json();
+      const rawTyphoons = await typhoonsRes.json();
+      const now = Date.now();
+      const activeTyphoons = Array.isArray(rawTyphoons) ? rawTyphoons.filter((t: any) => {
+        const ts = new Date(t.updatedAt || t.current?.dateTime).getTime();
+        return isNaN(ts) || now - ts < EXPIRE_DAYS_MS;
+      }) : [];
+
+      const nextSigs = new Map<string, string>();
+      const changedKeys = new Set<string>();
+      for (const w of Array.isArray(nextWarnings) ? nextWarnings : []) {
+        const k = `w:${w.region || w.area}`;
+        const sig = `${w.reportDateTime}:${w.warningName}:${w.warningLevel}`;
+        const prev = nextSigs.get(k);
+        nextSigs.set(k, prev ? `${prev}|${sig}` : sig);
+      }
+      for (const eq of Array.isArray(eqData) ? eqData : []) {
+        const k = `eq:${eq.eventId || eq.xmlId || eq.originTime}`;
+        nextSigs.set(k, `${eq.xmlId}:${eq.maxIntensity}:${eq.magnitude}:${eq.hypocenterName}`);
+      }
+      for (const ty of activeTyphoons) {
+        const k = `ty:${ty.tcNumber}`;
+        nextSigs.set(k, `${ty.updatedAt}:${ty.current?.pressure}:${ty.current?.lat}:${ty.current?.lon}`);
+      }
+
+      if (hasInitialLoadedRef.current) {
+        for (const [k, sig] of nextSigs.entries()) {
+          if (prevSigsRef.current.get(k) !== sig) {
+            changedKeys.add(k);
+          }
+        }
+      }
+      prevSigsRef.current = nextSigs;
+
+      const shouldAnimateUpdate = hasInitialLoadedRef.current && (bustCache || changedKeys.size > 0);
+      if (shouldAnimateUpdate) {
+        setIsFadingOut(true);
+        await new Promise(resolve => setTimeout(resolve, 180));
+      }
+
+      setWarnings(nextWarnings);
       setEarthquakes(eqData);
 
       // 続報が取得できた場合、開いている詳細情報も最新値で上書き同期する
@@ -146,12 +201,6 @@ export default function App() {
         return updated || prev;
       });
 
-      const rawTyphoons = await typhoonsRes.json();
-      const now = Date.now();
-      const activeTyphoons = Array.isArray(rawTyphoons) ? rawTyphoons.filter((t: any) => {
-        const ts = new Date(t.updatedAt || t.current?.dateTime).getTime();
-        return isNaN(ts) || now - ts < EXPIRE_DAYS_MS;
-      }) : [];
       setTyphoons(activeTyphoons);
       setSelectedTyphoon((prev: any) => {
         if (!prev) return null;
@@ -163,8 +212,15 @@ export default function App() {
         const statusData = await statusRes.json();
         setLastUpdated(statusData.lastUpdated || null);
       }
-      if (bustCache) setFlapEpoch(c => c + 1);
+
+      if (shouldAnimateUpdate) {
+        setUpdatedRowKeys(changedKeys);
+        setAnimEpoch(c => c + 1);
+        setIsFadingOut(false);
+      }
+      hasInitialLoadedRef.current = true;
     } catch (e: any) {
+      setIsFadingOut(false);
       setError(e.message);
     }
     setLoading(false);
@@ -312,9 +368,12 @@ export default function App() {
                 key={tab.id}
                 onClick={() => {
                   const targetTab = tab.id as any;
-                  setActiveTab(targetTab);
-                  if (targetTab !== 'earthquakes') setSelectedEarthquake(null);
-                  if (targetTab !== 'typhoons') setSelectedTyphoon(null);
+                  if (targetTab === activeTab && !selectedEarthquake && !selectedTyphoon) return;
+                  runWithFadeTransition(() => {
+                    setActiveTab(targetTab);
+                    if (targetTab !== 'earthquakes') setSelectedEarthquake(null);
+                    if (targetTab !== 'typhoons') setSelectedTyphoon(null);
+                  });
                   pushNavState({ tab: targetTab, quakeId: null, typhoonNumber: null });
                 }}
                 style={{
@@ -353,8 +412,10 @@ export default function App() {
                       value={viewMode} 
                       onChange={(e) => {
                         const newMode = e.target.value as any;
-                        setViewMode(newMode);
-                        setSelectedParentArea(null);
+                        runWithFadeTransition(() => {
+                          setViewMode(newMode);
+                          setSelectedParentArea(null);
+                        });
                         pushNavState({ viewMode: newMode, selectedParentArea: null });
                       }}
                       style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem', backgroundColor: '#fff', color: '#475569' }}
@@ -381,7 +442,10 @@ export default function App() {
                   ].map(sm => (
                     <button
                       key={sm.id}
-                      onClick={() => setQuakeSortMode(sm.id as any)}
+                      onClick={() => {
+                        if (quakeSortMode === sm.id) return;
+                        runWithFadeTransition(() => setQuakeSortMode(sm.id as any));
+                      }}
                       style={{
                         padding: '4px 10px',
                         fontSize: '0.8rem',
@@ -452,7 +516,10 @@ export default function App() {
                     </tr>
                   )}
                 </thead>
-                <tbody key={`${activeTab}-${viewMode}-${selectedParentArea || ''}-${quakeSortMode}-${lastUpdated || ''}-${flapEpoch}`}>
+                <tbody
+                  key={`${activeTab}-${viewMode}-${selectedParentArea || ''}-${quakeSortMode}-${animEpoch}`}
+                  className={`list-tbody${isFadingOut ? ' is-fading-out' : ''}`}
+                >
                   {activeTab === 'warnings' && (() => {
                     const PREF_CATEGORY_MAP: Record<string, string[]> = {
                       "北海道": [
@@ -492,14 +559,18 @@ export default function App() {
                       warningsByCategory[cat].push(row);
                     });
 
-                    let flapRowCounter = 0;
+                    const hasSpecificWarningDiff = groupedWarnings.some((row: any) => updatedRowKeys.has(`w:${row.area}`));
+                    let seenUpdated = false;
+                    let rowCounter = 0;
 
                     return CATEGORY_ORDER.map(cat => {
                       if (!warningsByCategory[cat] || warningsByCategory[cat].length === 0) return null;
-                      const catDelay = Math.min(flapRowCounter++ * 18, 420);
+                      const catHasUpdate = warningsByCategory[cat].some((r: any) => updatedRowKeys.has(`w:${r.area}`));
+                      const catDelay = Math.min(rowCounter++ * 18, 360);
+                      const catAnimClass = seenUpdated ? 'row-push-down' : (catHasUpdate || !hasSpecificWarningDiff ? 'row-slide-in' : 'row-fade-in');
                       return (
                         <React.Fragment key={cat}>
-                          <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', '--flap-delay': `${catDelay}ms` } as React.CSSProperties}>
+                          <tr className={catAnimClass} style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', '--row-delay': `${catDelay}ms` } as React.CSSProperties}>
                             <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>{cat}</td>
                           </tr>
                           {Object.entries(
@@ -512,16 +583,19 @@ export default function App() {
                           ).map(([pref, rows]: [string, any]) => (
                             <React.Fragment key={pref}>
                               {(viewMode === 'prefecture' || viewMode === 'region') && pref !== cat && (
-                                <tr className="split-flap-row" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', '--flap-delay': `${Math.min(flapRowCounter++ * 18, 420)}ms` } as React.CSSProperties}>
+                                <tr className={seenUpdated ? 'row-push-down' : 'row-fade-in'} style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', '--row-delay': `${Math.min(rowCounter++ * 18, 360)}ms` } as React.CSSProperties}>
                                   <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem' }}>
                                     {pref}
                                   </td>
                                 </tr>
                               )}
                               {rows.map((row: any, index: number) => {
-                                const rowDelay = Math.min(flapRowCounter++ * 18, 420);
+                                const isUpdated = hasSpecificWarningDiff ? updatedRowKeys.has(`w:${row.area}`) : (!seenUpdated && index === 0);
+                                const rowClass = isUpdated ? 'row-slide-in' : (seenUpdated ? 'row-push-down' : 'row-fade-in');
+                                if (isUpdated) seenUpdated = true;
+                                const rowDelay = Math.min(rowCounter++ * 18, 360);
                                 return (
-                                <tr key={row.area || index} className="split-flap-row fade-update" style={{ borderBottom: '1px solid #f1f5f9', '--flap-delay': `${rowDelay}ms` } as React.CSSProperties}
+                                <tr key={row.area || index} className={`${rowClass} fade-update`} style={{ borderBottom: '1px solid #f1f5f9', '--row-delay': `${rowDelay}ms` } as React.CSSProperties}
                                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                                 >
@@ -535,8 +609,10 @@ export default function App() {
                                     onClick={() => {
                                       if (viewMode === 'prefecture' || viewMode === 'region') {
                                         const parent = row.prefecture || row.area;
-                                        setSelectedParentArea(parent);
-                                        setViewMode('municipality');
+                                        runWithFadeTransition(() => {
+                                          setSelectedParentArea(parent);
+                                          setViewMode('municipality');
+                                        });
                                         pushNavState({ viewMode: 'municipality', selectedParentArea: parent });
                                       }
                                     }}
@@ -550,13 +626,12 @@ export default function App() {
                                         .map((w: any, idx: number) => {
                                           const displayName = formatWarningName(w.warningName);
                                           return (
-                                            <span key={idx} className="flap-badge" style={{
+                                            <span key={idx} style={{
                                               padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
                                               whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                              '--badge-idx': idx,
                                               ...getWarningColor(w.warningLevel)
-                                            } as React.CSSProperties}>
+                                            }}>
                                               {displayName}
                                             </span>
                                           );
@@ -575,6 +650,10 @@ export default function App() {
 
                   {/* 地震情報一覧 */}
                   {activeTab === 'earthquakes' && !selectedEarthquake && (() => {
+                    const getQuakeKey = (eq: any) => `eq:${eq.eventId || eq.xmlId || eq.originTime}`;
+                    const hasSpecificQuakeDiff = sortedEarthquakes.some(eq => updatedRowKeys.has(getQuakeKey(eq)));
+                    let seenQuakeUpdated = false;
+
                     // 地方別ソート時のグループ化
                     if (quakeSortMode === 'region') {
                       const byRegion: Record<string, any[]> = {};
@@ -588,22 +667,34 @@ export default function App() {
                       return REGIONS.map((reg) => {
                         const list = byRegion[reg];
                         if (!list || list.length === 0) return null;
-                        const headerDelay = Math.min(eqRegCounter++ * 20, 420);
+                        const headerDelay = Math.min(eqRegCounter++ * 18, 360);
+                        const regHasUpdate = list.some(eq => updatedRowKeys.has(getQuakeKey(eq)));
+                        const headerClass = seenQuakeUpdated ? 'row-push-down' : (regHasUpdate || !hasSpecificQuakeDiff ? 'row-slide-in' : 'row-fade-in');
                         return (
                           <React.Fragment key={reg}>
-                            <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', '--flap-delay': `${headerDelay}ms` } as React.CSSProperties}>
+                            <tr className={headerClass} style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', '--row-delay': `${headerDelay}ms` } as React.CSSProperties}>
                               <td colSpan={4} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
                                 📍 {reg} ({list.length}件)
                               </td>
                             </tr>
-                            {list.map((eq) => renderEarthquakeRow(eq, eqRegCounter++))}
+                            {list.map((eq) => {
+                              const isUpdated = hasSpecificQuakeDiff ? updatedRowKeys.has(getQuakeKey(eq)) : !seenQuakeUpdated;
+                              const rowClass = isUpdated ? 'row-slide-in' : (seenQuakeUpdated ? 'row-push-down' : 'row-fade-in');
+                              if (isUpdated) seenQuakeUpdated = true;
+                              return renderEarthquakeRow(eq, eqRegCounter++, rowClass);
+                            })}
                           </React.Fragment>
                         );
                       });
                     }
 
                     // 通常ソート
-                    return sortedEarthquakes.map((eq, index) => renderEarthquakeRow(eq, index));
+                    return sortedEarthquakes.map((eq, index) => {
+                      const isUpdated = hasSpecificQuakeDiff ? updatedRowKeys.has(getQuakeKey(eq)) : index === 0;
+                      const rowClass = isUpdated ? 'row-slide-in' : (seenQuakeUpdated ? 'row-push-down' : 'row-fade-in');
+                      if (isUpdated) seenQuakeUpdated = true;
+                      return renderEarthquakeRow(eq, index, rowClass);
+                    });
                   })()}
 
                   {/* 地震詳細ビュー */}
@@ -620,35 +711,42 @@ export default function App() {
                   )}
 
                   {/* 台風情報一覧 */}
-                  {activeTab === 'typhoons' && !selectedTyphoon && typhoons.map((ty, index) => {
-                    const num = String(ty.tcNumber);
-                    const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
-                    const displayName = `台風${typhoonNum}号（${ty.name}）`;
-                    const intensityText = [ty.current?.intensityClass, ty.current?.areaClass].filter(Boolean).join(' / ') || '—';
-                    const delay = Math.min(index * 20, 420);
-                    return (
-                      <tr 
-                        key={ty.tcNumber || index} 
-                        className="split-flap-row fade-update" 
-                        style={{ borderBottom: '1px solid #f1f5f9', '--flap-delay': `${delay}ms` } as React.CSSProperties}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                      >
-                        <td 
-                          style={{ padding: '12px 16px', verticalAlign: 'middle', ...LINK_STYLE }}
-                          onClick={() => {
-                            setSelectedTyphoon(ty);
-                            pushNavState({ typhoonNumber: String(ty.tcNumber) });
-                          }}
+                  {activeTab === 'typhoons' && !selectedTyphoon && (() => {
+                    const hasSpecificTyphoonDiff = typhoons.some(ty => updatedRowKeys.has(`ty:${ty.tcNumber}`));
+                    let seenTyphoonUpdated = false;
+                    return typhoons.map((ty, index) => {
+                      const num = String(ty.tcNumber);
+                      const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
+                      const displayName = `台風${typhoonNum}号（${ty.name}）`;
+                      const intensityText = [ty.current?.intensityClass, ty.current?.areaClass].filter(Boolean).join(' / ') || '—';
+                      const isUpdated = hasSpecificTyphoonDiff ? updatedRowKeys.has(`ty:${ty.tcNumber}`) : index === 0;
+                      const rowClass = isUpdated ? 'row-slide-in' : (seenTyphoonUpdated ? 'row-push-down' : 'row-fade-in');
+                      if (isUpdated) seenTyphoonUpdated = true;
+                      const delay = Math.min(index * 20, 360);
+                      return (
+                        <tr 
+                          key={ty.tcNumber || index} 
+                          className={`${rowClass} fade-update`} 
+                          style={{ borderBottom: '1px solid #f1f5f9', '--row-delay': `${delay}ms` } as React.CSSProperties}
+                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                         >
-                          {displayName}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1e293b' }}>{intensityText}</td>
-                        <td style={{ padding: '12px 16px', color: '#1e293b' }}>{ty.current?.pressure ? `${ty.current.pressure} hPa` : '—'}</td>
-                        <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(ty.updatedAt).toLocaleString()}</td>
-                      </tr>
-                    );
-                  })}
+                          <td 
+                            style={{ padding: '12px 16px', verticalAlign: 'middle', ...LINK_STYLE }}
+                            onClick={() => {
+                              setSelectedTyphoon(ty);
+                              pushNavState({ typhoonNumber: String(ty.tcNumber) });
+                            }}
+                          >
+                            {displayName}
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#1e293b' }}>{intensityText}</td>
+                          <td style={{ padding: '12px 16px', color: '#1e293b' }}>{ty.current?.pressure ? `${ty.current.pressure} hPa` : '—'}</td>
+                          <td style={{ padding: '12px 16px', color: '#64748b' }}>{new Date(ty.updatedAt).toLocaleString()}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
 
                   {/* 台風詳細ビュー */}
                   {activeTab === 'typhoons' && selectedTyphoon && (
@@ -693,16 +791,16 @@ export default function App() {
   );
 
   // 地震行レンダリング関数（気象警報の地方リンクスタイルに完全準拠）
-  function renderEarthquakeRow(eq: any, index: number) {
+  function renderEarthquakeRow(eq: any, index: number, rowClass = 'row-slide-in') {
     const formattedIntensity = formatIntensity(eq.maxIntensity);
     const regionName = getRegionFromHypocenter(eq.hypocenterName);
 
-    const delay = Math.min(index * 18, 420);
+    const delay = Math.min(index * 18, 360);
     return (
       <tr
         key={eq.xmlId || eq.eventId || index}
-        className="split-flap-row fade-update"
-        style={{ borderBottom: '1px solid #f1f5f9', '--flap-delay': `${delay}ms` } as React.CSSProperties}
+        className={`${rowClass} fade-update`}
+        style={{ borderBottom: '1px solid #f1f5f9', '--row-delay': `${delay}ms` } as React.CSSProperties}
         onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       >
@@ -728,7 +826,7 @@ export default function App() {
           {eq.magnitude ? `M${eq.magnitude}` : '—'}
         </td>
         <td style={{ padding: '12px 16px' }}>
-          <span className="flap-badge" style={{
+          <span style={{
             padding: '4px 8px',
             borderRadius: '4px',
             fontSize: '0.75rem',

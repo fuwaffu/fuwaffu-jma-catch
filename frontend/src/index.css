@@ -16,350 +16,77 @@ body {
   display: inline-block;
 }
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* 既存リストのフェードアウト状態 */
+.list-tbody {
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+  opacity: 1;
+  transform: translateY(0);
 }
 
-.slide-in-row {
-  animation: slideIn 0.3s ease-out forwards;
+.list-tbody.is-fading-out {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
 }
 
-/* ============================================================================
- * 反転フラップ式案内表示機（ソラリー式 / パタパタ）アニメーション
- * 参考:
- *  - 函館空港の反転フラップ式案内表示機 (https://www.youtube.com/watch?v=PWoSJxVFXn0)
- *  - ソレノイド駆動・ストッパ爪制御の実機解析 (https://cpubox.jp/blog/flap_patapata/)
- *  - 反転フラップ式案内表示機の構造 (https://ja.wikipedia.org/wiki/反転フラップ式案内表示機)
- *
- * 実機の物理・視覚特性:
- *  1. 上下2分割構造と中央円盤軸（50% 50%）:
- *     上半分（1枚上のフラップ裏面・上部ストッパ爪で保持）と下半分（表面・重力で垂下）が
- *     中央の水平軸を境に合わさって1つの表示を成す。
- *  2. 一方向への連続回転（上→手前→下）:
- *     ストッパ爪から外れた上フラップが手前に倒れ込み（0deg → -84deg）、水平面（90度）を
- *     通過して下半分へ叩きつけられ（+84deg → 0deg）、下のフラップ束に当たって急停止する。
- *     逆方向へ戻る動きや振り子のようなバウンスは一切発生しない。
- *  3. ソレノイドのステップ送りと爪のロック間合い:
- *     1枚めくれるごとにストッパ爪が次のフラップを受け止める微小な静止時間（約12〜18ms）があり、
- *     「パタ・パタ・パタ・ピタッ」という歯切れの良い機械的リズムを生む。
- *  4. 列（各表示ドラム）・バッジ単位の非同期停止:
- *     行ごとのカスケードに加え、各列や警報・震度プレートごとに目的位置までの送り枚数（3〜5枚）が
- *     異なるため、一斉に回り始めて時間差で次々とピタッと揃う実機の動きを再現する。
- * ============================================================================ */
-
-/* 3枚送り（発表日時・発生日時・見出し行など：パタ・パタ・パタッ） */
-@keyframes splitFlap3 {
-  /* 1枚目：手前へ倒れ込み → 水平通過 → 下部へ着地 */
-  0% {
-    transform: perspective(550px) rotateX(78deg);
-    opacity: 0.35;
-    filter: brightness(0.65);
-  }
-  18% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 0.95;
-    filter: brightness(1.04);
-  }
-  /* ストッパ爪による瞬間保持 */
-  26% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 2枚目：爪から解放（上→手前：0deg → -84deg） */
-  40% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  /* 水平面（90度）を通過し手前→下へ（+84deg → 0deg） */
-  40.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  56% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(0.98);
-  }
-  /* ストッパ爪による瞬間保持 */
-  64% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 3枚目（最終フラップ）：爪から解放（上→手前） */
-  78% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  /* 水平面通過 → 下部フラップ束へ落下しピタッと停止 */
-  78.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  96% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 1;
-    filter: brightness(1.02);
-  }
-  100% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 1;
-    filter: brightness(1);
-  }
-}
-
-/* 4枚送り（対象地域・震源地・台風強さなど：パタ・パタ・パタ・パタッ） */
-@keyframes splitFlap4 {
-  0% {
-    transform: perspective(550px) rotateX(78deg);
-    opacity: 0.35;
-    filter: brightness(0.65);
-  }
-  13% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 0.95;
-    filter: brightness(1.04);
-  }
-  19% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 2枚目 */
-  30% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  30.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  42% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(0.98);
-  }
-  48% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 3枚目 */
-  59% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  59.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  71% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(0.98);
-  }
-  77% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 4枚目（最終フラップ） */
-  87% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.6) contrast(1.08);
-  }
-  87.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  97% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 1;
-    filter: brightness(1.02);
-  }
-  100% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 1;
-    filter: brightness(1);
-  }
-}
-
-/* 5枚送り（警報・注意報プレート、最大震度プレート、中心気圧など：パタ・パタ・パタ・パタ・パタッ） */
-@keyframes splitFlap5 {
-  0% {
-    transform: perspective(550px) rotateX(78deg);
-    opacity: 0.35;
-    filter: brightness(0.62);
-  }
-  10% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 0.95;
-    filter: brightness(1.04);
-  }
-  15% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 2枚目 */
-  24% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  24.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  34% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(0.98);
-  }
-  39% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 3枚目 */
-  48% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  48.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  58% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(0.98);
-  }
-  63% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 4枚目 */
-  72% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.58) contrast(1.08);
-  }
-  72.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  81% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(0.98);
-  }
-  85% {
-    transform: perspective(550px) rotateX(0deg);
-    filter: brightness(1);
-  }
-  /* 5枚目（最終フラップ） */
-  92% {
-    transform: perspective(550px) rotateX(-84deg);
-    filter: brightness(0.6) contrast(1.06);
-  }
-  92.1% {
-    transform: perspective(550px) rotateX(84deg);
-    filter: brightness(1.12);
-  }
-  98.5% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 1;
-    filter: brightness(1.02);
-  }
-  100% {
-    transform: perspective(550px) rotateX(0deg);
-    opacity: 1;
-    filter: brightness(1);
-  }
-}
-
-/* 回転動作中のみ中央の水平分割スリット（上下フラップの境目・回転軸）を表示 */
-@keyframes splitFlapSlit {
-  0%, 93% {
-    opacity: 1;
-  }
-  100% {
+/* 更新部分より上の変化なし項目（静かにフェードイン） */
+@keyframes rowFadeIn {
+  from {
     opacity: 0;
   }
+  to {
+    opacity: 1;
+  }
 }
 
-.split-flap-row {
-  display: table-row;
+/* 更新部分より下の項目を押し下げるアニメーション */
+@keyframes rowPushDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-38px);
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.split-flap-row > td {
-  position: relative;
-  transform-origin: 50% 50%;
-  animation-name: splitFlap3;
-  animation-duration: 0.28s;
-  animation-timing-function: linear;
-  animation-fill-mode: both;
-  animation-delay: var(--flap-delay, 0ms);
-  will-change: transform, opacity, filter;
+/* 更新された項目がスペースにスライドインするアニメーション */
+@keyframes rowSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-28px) translateY(-8px);
+    background-color: #e0f2fe;
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+    background-color: #eff6ff;
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
 }
 
-/* 列（各表示ドラム）ごとに回転枚数・開始/停止タイミングを変え、函館空港の実機のように列単位でパタパタと揃う挙動を再現 */
-.split-flap-row > td:nth-child(2) {
-  animation-name: splitFlap4;
-  animation-duration: 0.36s;
-  animation-delay: calc(var(--flap-delay, 0ms) + 14ms);
+.row-fade-in {
+  animation: rowFadeIn 0.22s ease-out both;
+  animation-delay: var(--row-delay, 0ms);
 }
 
-.split-flap-row > td:nth-child(3) {
-  animation-name: splitFlap5;
-  animation-duration: 0.44s;
-  animation-delay: calc(var(--flap-delay, 0ms) + 28ms);
+.row-push-down {
+  animation: rowPushDown 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--row-delay, 0ms);
+  will-change: transform, opacity;
 }
 
-.split-flap-row > td:nth-child(4) {
-  animation-name: splitFlap4;
-  animation-duration: 0.39s;
-  animation-delay: calc(var(--flap-delay, 0ms) + 40ms);
-}
-
-/* 個別フラッププレート（.flap-badge）を内包するセルは、セル全体ではなく内部プレート単位で回転させる */
-.split-flap-row > td:has(.flap-badge) {
-  animation: none;
-  transform: none;
-}
-
-.split-flap-row > td:has(.flap-badge)::after {
-  display: none;
-}
-
-/* 上半分と下半分のフラップ境界線（円盤軸の水平スリット＋上フラップの微細な影） */
-.split-flap-row > td::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(15, 23, 42, 0.04) 0%,
-    rgba(15, 23, 42, 0.01) calc(50% - 1px),
-    rgba(15, 23, 42, 0.22) 50%,
-    rgba(255, 255, 255, 0.55) calc(50% + 1px),
-    transparent calc(50% + 2px),
-    transparent 100%
-  );
-  pointer-events: none;
-  animation: splitFlapSlit 0.38s linear both;
-  animation-delay: var(--flap-delay, 0ms);
-}
-
-/* 警報・注意報・震度ラベル等の個別カラーフラッププレート（函館空港の備考・航空会社プレート相当） */
-.flap-badge {
-  position: relative;
-  transform-origin: 50% 50%;
-  animation: splitFlap5 0.44s linear both;
-  animation-delay: calc(var(--flap-delay, 0ms) + var(--badge-idx, 0) * 20ms + 24ms);
-  will-change: transform, opacity, filter;
-}
-
-.flap-badge::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(50% - 0.5px);
-  height: 1px;
-  background: rgba(15, 23, 42, 0.28);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28);
-  pointer-events: none;
-  animation: splitFlapSlit 0.44s linear both;
-  animation-delay: calc(var(--flap-delay, 0ms) + var(--badge-idx, 0) * 20ms + 24ms);
+.row-slide-in {
+  animation: rowSlideIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--row-delay, 0ms) + 70ms);
+  will-change: transform, opacity, background-color;
 }
 
 .fade-update {
@@ -367,14 +94,13 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .split-flap-row,
-  .split-flap-row > td,
-  .split-flap-row > td::after,
-  .flap-badge,
-  .flap-badge::after {
+  .list-tbody,
+  .row-fade-in,
+  .row-push-down,
+  .row-slide-in {
     animation: none !important;
+    transition: none !important;
     transform: none !important;
     opacity: 1 !important;
-    filter: none !important;
   }
 }
