@@ -34,7 +34,6 @@ export default function App() {
   const [typhoons, setTyphoons] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [syncStatus, setSyncStatus] = useState({ isSyncing: false, progress: 0 });
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
   const [selectedEarthquake, setSelectedEarthquake] = useState<any | null>(null);
@@ -132,9 +131,6 @@ export default function App() {
       ]);
 
       if (!warningsRes.ok || !earthquakesRes.ok || !typhoonsRes.ok) {
-        if (warningsRes.status === 500 || earthquakesRes.status === 500) {
-          throw new Error('LIMIT_EXCEEDED');
-        }
         throw new Error('Failed to fetch one or more APIs');
       }
 
@@ -156,51 +152,48 @@ export default function App() {
         return isNaN(ts) || now - ts < EXPIRE_DAYS_MS;
       }) : [];
       setTyphoons(activeTyphoons);
+      setSelectedTyphoon((prev: any) => {
+        if (!prev) return null;
+        const updated = activeTyphoons.find((t: any) => String(t.tcNumber) === String(prev.tcNumber));
+        return updated || prev;
+      });
 
       if (statusRes.ok) {
         const statusData = await statusRes.json();
         setLastUpdated(statusData.lastUpdated || null);
       }
     } catch (e: any) {
-      setError(e.message === 'LIMIT_EXCEEDED' ? 'LIMIT_EXCEEDED' : e.message);
+      setError(e.message);
     }
     setLoading(false);
   };
+
+  const lastUpdatedRef = useRef<string | null>(null);
+  lastUpdatedRef.current = lastUpdated;
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(() => {
       fetchData();
-    }, 300000); // 5分ごと
+    }, 60000); // 1分ごと自動取得
     return () => clearInterval(interval);
   }, []);
 
+  // バックエンドの最終更新時刻を監視し、新着電文が反映されたら即座に再取得する
   useEffect(() => {
-    let intervalId: any;
-    let isProcessing = false;
     const checkStatus = async () => {
-      if (isProcessing) return;
-      isProcessing = true;
       try {
         const res = await fetch(`${API_BASE}/api/status`);
+        if (!res.ok) return;
         const data = await res.json();
-        setSyncStatus({ isSyncing: !!data.isSyncing, progress: data.progress || 0 });
-        
-        if (data.isSyncing) {
-          const stepRes = await fetch(`${API_BASE}/api/sync-step`);
-          const stepData = await stepRes.json();
-          if (stepData.ok) {
-            setSyncStatus({ isSyncing: stepData.isSyncing, progress: stepData.progress });
-          }
+        if (data.lastUpdated && lastUpdatedRef.current && data.lastUpdated !== lastUpdatedRef.current) {
+          fetchData();
         }
       } catch (e) {
-        console.error('[Sync Status Error]', e);
-      } finally {
-        isProcessing = false;
+        console.error('[Status Check Error]', e);
       }
     };
-    checkStatus();
-    intervalId = setInterval(checkStatus, 1500);
+    const intervalId = setInterval(checkStatus, 10000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -265,18 +258,6 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', padding: '16px', backgroundColor: '#f1f5f9', color: '#0f172a' }}>
       <div style={{ maxWidth: '1152px', margin: '0 auto', position: 'relative' }}>
-        {syncStatus.isSyncing && (
-          <div style={{
-            position: 'absolute', top: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 2000,
-            backgroundColor: 'rgba(0,0,0,0.8)', color: '#fff', padding: '16px 32px', borderRadius: '9999px',
-            display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(12px)', fontSize: '1.25rem', fontWeight: 'bold'
-          }}>
-            <i className="fa-solid fa-arrows-rotate fa-spin"></i>
-            <span>情報整理中... {syncStatus.progress}%</span>
-          </div>
-        )}
-        
         <header style={{ 
           background: 'rgba(255, 255, 255, 0.65)', 
           backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
@@ -315,19 +296,6 @@ export default function App() {
             </button>
           </div>
         </header>
-
-        {error === 'LIMIT_EXCEEDED' && (
-          <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '16px', marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'flex-start', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-            <span style={{ fontSize: '1.25rem' }}>⚠️</span>
-            <div>
-              <h3 style={{ margin: '0 0 4px 0', color: '#991b1b', fontSize: '1rem', fontWeight: 700 }}>データベースの読み取り上限に達しました</h3>
-              <p style={{ margin: 0, color: '#b91c1c', fontSize: '0.875rem' }}>
-                Cloudflare D1の無料枠（1日あたりの行読み取り制限）を超過したため、現在データを更新・取得できません。<br />
-                日本時間の <strong>翌朝 09:00 (UTC 00:00)</strong> にリセットされるまでお待ちください。
-              </p>
-            </div>
-          </div>
-        )}
 
         <main style={{ background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           
@@ -435,7 +403,7 @@ export default function App() {
               </div>
             )}
 
-            {error && error !== 'LIMIT_EXCEEDED' && <div style={{ margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '0.875rem' }}>{error}</div>}
+            {error && <div style={{ margin: '16px', padding: '12px', backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '0.875rem' }}>{error}</div>}
             
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
@@ -776,11 +744,20 @@ export default function App() {
 function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any; onBack: () => void; use24HourFormat: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const [copiedObs, setCopiedObs] = useState(false);
 
   const num = String(typhoon.tcNumber);
   const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : typhoon.tcNumber;
   const displayName = `台風${typhoonNum}号（${typhoon.name}）`;
   const cur = typhoon.current || {};
+
+  const handleCopyObsUrl = () => {
+    const url = `${window.location.origin}/?mode=obs&type=typhoon&id=${encodeURIComponent(String(typhoon.tcNumber))}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedObs(true);
+      setTimeout(() => setCopiedObs(false), 3000);
+    });
+  };
 
   const formatForecastTime = (isoStr: string): string => {
     if (!isoStr) return '';
@@ -856,9 +833,32 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
   return (
     <div style={{ padding: '0' }}>
       {/* ヘッダー */}
-      <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-        <button onClick={onBack} style={{ padding: '6px 14px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>← 一覧に戻る</button>
-        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>🌀 {displayName}</h2>
+      <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <button onClick={onBack} style={{ padding: '6px 14px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>← 一覧に戻る</button>
+          <button
+            onClick={handleCopyObsUrl}
+            style={{
+              padding: '6px 14px',
+              backgroundColor: copiedObs ? '#16a34a' : '#3b82f6',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'background-color 0.15s ease'
+            }}
+            title="OBSのブラウザソースに貼り付けるためのURLをコピーします"
+          >
+            <i className={`fa-solid ${copiedObs ? 'fa-check' : 'fa-link'}`}></i>
+            {copiedObs ? 'OBS用URLをコピーしました' : 'OBS貼付用URLをコピー'}
+          </button>
+          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>🌀 {displayName}</h2>
+        </div>
         <span style={{ fontSize: '0.8rem', color: '#64748b' }}>更新: {new Date(typhoon.updatedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span>
       </div>
 

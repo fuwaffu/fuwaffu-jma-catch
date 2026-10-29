@@ -57,9 +57,9 @@ export function parseQuakeCoord(coord: any): { lat: number; lon: number; depthKm
   };
 }
 
-const INTENSITY_ORDER = ['7', '6強', '6弱', '5強', '5弱', '4', '3', '2', '1'];
+export const INTENSITY_ORDER = ['7', '6強', '6弱', '5強', '5弱', '4', '3', '2', '1'];
 
-interface IntensityGroup {
+export interface IntensityGroup {
   intensity: string;
   prefectures: {
     prefName: string;
@@ -67,11 +67,138 @@ interface IntensityGroup {
   }[];
 }
 
-interface StationItem {
+export interface StationItem {
   name: string;
   int: string;
   lat: number;
   lon: number;
+}
+
+// ponytail: Shared JMA Bosai detail fetcher & parser used by both Dashboard and OBS views
+export async function fetchEarthquakeDetailData(earthquake: EarthquakeItem): Promise<{
+  hypoLat: number | null;
+  hypoLon: number | null;
+  depthKm: number | null;
+  stations: StationItem[];
+  intensityGroups: IntensityGroup[];
+} | null> {
+  let data: any = null;
+  try {
+    const params = new URLSearchParams();
+    if (earthquake.xmlId) params.set('id', earthquake.xmlId);
+    if (earthquake.eventId) params.set('eid', earthquake.eventId);
+    if (earthquake.originTime) params.set('time', earthquake.originTime);
+    if (earthquake.hypocenterName) params.set('anm', earthquake.hypocenterName);
+    params.set('_t', String(Date.now()));
+
+    const res = await fetch(`${API_BASE}/api/earthquake-detail?${params.toString()}`);
+    if (res.ok) data = await res.json();
+  } catch (e) {
+    console.warn('Backend proxy fetch failed, falling back to direct JMA lookup', e);
+  }
+
+  if (!data) {
+    try {
+      const listRes = await fetch('https://www.jma.go.jp/bosai/quake/data/list.json');
+      if (listRes.ok) {
+        const list = (await listRes.json()) as any[];
+        const eqTime = new Date(earthquake.originTime).getTime();
+        const matchingEntries = list.filter((e: any) => {
+          if (earthquake.eventId && (e.eid === earthquake.eventId || e.json?.includes(earthquake.eventId))) return true;
+          if (e.at && Math.abs(new Date(e.at).getTime() - eqTime) < 120000) {
+            if (earthquake.hypocenterName && e.anm) {
+              return e.anm.includes(earthquake.hypocenterName) || earthquake.hypocenterName.includes(e.anm);
+            }
+            return true;
+          }
+          return false;
+        });
+
+        const targetEntry = matchingEntries.find((e: any) => e.ttl?.includes('震源・震度') || e.json?.includes('VXSE5k') || e.json?.includes('VXSE53'))
+          || matchingEntries.find((e: any) => e.ttl?.includes('震度') || e.json?.includes('VXSE51'))
+          || matchingEntries[0];
+
+        if (targetEntry?.json) {
+          const jmaRes = await fetch(`https://www.jma.go.jp/bosai/quake/data/${targetEntry.json}`);
+          if (jmaRes.ok) data = await jmaRes.json();
+        }
+      }
+    } catch (e) {
+      console.error('Direct JMA lookup failed', e);
+    }
+  }
+
+  if (!data) return null;
+
+  let hypoLat: number | null = null;
+  let hypoLon: number | null = null;
+  let depthKm: number | null = null;
+
+  const eqBody = data.Body?.Earthquake || data.Earthquake;
+  const coordStr = eqBody?.Hypocenter?.Area?.Coordinate || data.cod;
+  if (coordStr) {
+    const parsed = parseQuakeCoord(coordStr);
+    if (parsed) {
+      hypoLat = parsed.lat;
+      hypoLon = parsed.lon;
+      depthKm = parsed.depthKm;
+    }
+  }
+
+  const obs = data.Body?.Intensity?.Observation || data.Intensity?.Observation || data.Observation;
+  const obsPrefs = obs?.Pref || obs?.pref || [];
+  const byIntensity: Record<string, Record<string, string[]>> = {};
+  const stations: StationItem[] = [];
+
+  const prefArray = Array.isArray(obsPrefs) ? obsPrefs : [obsPrefs].filter(Boolean);
+  for (const p of prefArray) {
+    const prefName = p.Name || p.name || '';
+    const areas = Array.isArray(p.Area) ? p.Area : [p.Area].filter(Boolean);
+    for (const a of areas) {
+      const cities = Array.isArray(a.City) ? a.City : [a.City].filter(Boolean);
+      for (const c of cities) {
+        const cInt = formatIntensity(c.MaxInt || c.maxi);
+        const cityName = c.Name || c.name || '';
+
+        if (cInt && cInt !== '—') {
+          if (!byIntensity[cInt]) byIntensity[cInt] = {};
+          if (!byIntensity[cInt][prefName]) byIntensity[cInt][prefName] = [];
+          if (!byIntensity[cInt][prefName].includes(cityName)) {
+            byIntensity[cInt][prefName].push(cityName);
+          }
+        }
+
+        const stList = Array.isArray(c.IntensityStation) ? c.IntensityStation : [c.IntensityStation].filter(Boolean);
+        for (const st of stList) {
+          const latlon = st.latlon;
+          if (latlon && typeof latlon.lat === 'number' && typeof latlon.lon === 'number') {
+            stations.push({
+              name: st.Name || st.name || cityName,
+              int: formatIntensity(st.Int || st.int || c.MaxInt),
+              lat: latlon.lat,
+              lon: latlon.lon
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const intensityGroups: IntensityGroup[] = [];
+  for (const intVal of INTENSITY_ORDER) {
+    if (byIntensity[intVal]) {
+      const prefMap = byIntensity[intVal];
+      const prefs = Object.keys(prefMap).map(prefName => ({
+        prefName,
+        cities: prefMap[prefName]
+      }));
+      if (prefs.length > 0) {
+        intensityGroups.push({ intensity: intVal, prefectures: prefs });
+      }
+    }
+  }
+
+  return { hypoLat, hypoLon, depthKm, stations, intensityGroups };
 }
 
 export default function EarthquakeDetailView({
@@ -89,6 +216,7 @@ export default function EarthquakeDetailView({
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshSuccess, setRefreshSuccess] = useState(false);
+  const [copiedObs, setCopiedObs] = useState(false);
   const [hypoLat, setHypoLat] = useState<number | null>(earthquake.lat ?? null);
   const [hypoLon, setHypoLon] = useState<number | null>(earthquake.lon ?? null);
   const [depthKm, setDepthKm] = useState<number | string>(earthquake.depth ?? 0);
@@ -96,6 +224,17 @@ export default function EarthquakeDetailView({
   const [intensityGroups, setIntensityGroups] = useState<IntensityGroup[]>([]);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleCopyObsUrl = () => {
+    const params = new URLSearchParams({ mode: 'obs', type: 'earthquake' });
+    if (earthquake.eventId || earthquake.xmlId) params.set('id', String(earthquake.eventId || earthquake.xmlId));
+    if (earthquake.originTime) params.set('time', earthquake.originTime);
+    const url = `${window.location.origin}/?${params.toString()}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedObs(true);
+      setTimeout(() => setCopiedObs(false), 3000);
+    });
+  };
 
   // earthquake propが更新されたらローカルstateも同期
   useEffect(() => {
@@ -113,133 +252,18 @@ export default function EarthquakeDetailView({
       setLoadingDetail(true);
       setDetailError(null);
       try {
-        let data: any = null;
-        // 1. バックエンドプロキシ経由でJMA JSONを取得（CORSおよびVXSE5k震度情報特定をバックエンドが保証）
-        try {
-          const params = new URLSearchParams();
-          if (earthquake.xmlId) params.set('id', earthquake.xmlId);
-          if (earthquake.eventId) params.set('eid', earthquake.eventId);
-          if (earthquake.originTime) params.set('time', earthquake.originTime);
-          if (earthquake.hypocenterName) params.set('anm', earthquake.hypocenterName);
-          params.set('_t', String(Date.now()));
-
-          const res = await fetch(`${API_BASE}/api/earthquake-detail?${params.toString()}`);
-          if (res.ok) {
-            data = await res.json();
-          }
-        } catch (e) {
-          console.warn('Backend proxy fetch failed, falling back to direct JMA lookup', e);
-        }
-
-        // 2. フォールバック: 直接JMA Bosaiから取得
-        if (!data) {
-          try {
-            const listRes = await fetch('https://www.jma.go.jp/bosai/quake/data/list.json');
-            if (listRes.ok) {
-              const list = (await listRes.json()) as any[];
-              const eqTime = new Date(earthquake.originTime).getTime();
-              const matchingEntries = list.filter((e: any) => {
-                if (earthquake.eventId && (e.eid === earthquake.eventId || e.json?.includes(earthquake.eventId))) return true;
-                if (e.at && Math.abs(new Date(e.at).getTime() - eqTime) < 120000) {
-                  if (earthquake.hypocenterName && e.anm) {
-                    return e.anm.includes(earthquake.hypocenterName) || earthquake.hypocenterName.includes(e.anm);
-                  }
-                  return true;
-                }
-                return false;
-              });
-
-              const targetEntry = matchingEntries.find((e: any) => e.ttl?.includes('震源・震度') || e.json?.includes('VXSE5k') || e.json?.includes('VXSE53'))
-                || matchingEntries.find((e: any) => e.ttl?.includes('震度') || e.json?.includes('VXSE51'))
-                || matchingEntries[0];
-
-              if (targetEntry?.json) {
-                const jmaRes = await fetch(`https://www.jma.go.jp/bosai/quake/data/${targetEntry.json}`);
-                if (jmaRes.ok) data = await jmaRes.json();
-              }
-            }
-          } catch (e) {
-            console.error('Direct JMA lookup failed', e);
-          }
-        }
-
+        const res = await fetchEarthquakeDetailData(earthquake);
         if (isCancelled) return;
-
-        if (data) {
-          // 震源情報の抽出
-          const eqBody = data.Body?.Earthquake || data.Earthquake;
-          const coordStr = eqBody?.Hypocenter?.Area?.Coordinate || data.cod;
-          if (coordStr) {
-            const parsed = parseQuakeCoord(coordStr);
-            if (parsed) {
-              setHypoLat(parsed.lat);
-              setHypoLon(parsed.lon);
-              if (parsed.depthKm != null) setDepthKm(parsed.depthKm);
-            }
-          }
-
-          // 観測地点および市区町村の抽出
-          const obs = data.Body?.Intensity?.Observation || data.Intensity?.Observation || data.Observation;
-          const obsPrefs = obs?.Pref || obs?.pref || [];
-          const byIntensity: Record<string, Record<string, string[]>> = {};
-          const stationList: StationItem[] = [];
-
-          const prefArray = Array.isArray(obsPrefs) ? obsPrefs : [obsPrefs].filter(Boolean);
-          for (const p of prefArray) {
-            const prefName = p.Name || p.name || '';
-            const areas = Array.isArray(p.Area) ? p.Area : [p.Area].filter(Boolean);
-            for (const a of areas) {
-              const cities = Array.isArray(a.City) ? a.City : [a.City].filter(Boolean);
-              for (const c of cities) {
-                const cInt = formatIntensity(c.MaxInt || c.maxi);
-                const cityName = c.Name || c.name || '';
-
-                if (cInt && cInt !== '—') {
-                  if (!byIntensity[cInt]) byIntensity[cInt] = {};
-                  if (!byIntensity[cInt][prefName]) byIntensity[cInt][prefName] = [];
-                  if (!byIntensity[cInt][prefName].includes(cityName)) {
-                    byIntensity[cInt][prefName].push(cityName);
-                  }
-                }
-
-                // 観測点（地図描画用）
-                const stList = Array.isArray(c.IntensityStation) ? c.IntensityStation : [c.IntensityStation].filter(Boolean);
-                for (const st of stList) {
-                  const latlon = st.latlon;
-                  if (latlon && typeof latlon.lat === 'number' && typeof latlon.lon === 'number') {
-                    stationList.push({
-                      name: st.Name || st.name || cityName,
-                      int: formatIntensity(st.Int || st.int || c.MaxInt),
-                      lat: latlon.lat,
-                      lon: latlon.lon
-                    });
-                  }
-                }
-              }
-            }
-          }
-
-          setStations(stationList);
-
-          // 震度順にソートしてグループ化
-          const sortedGroups: IntensityGroup[] = [];
-          for (const intVal of INTENSITY_ORDER) {
-            if (byIntensity[intVal]) {
-              const prefMap = byIntensity[intVal];
-              const prefs = Object.keys(prefMap).map(prefName => ({
-                prefName,
-                cities: prefMap[prefName]
-              }));
-              if (prefs.length > 0) {
-                sortedGroups.push({ intensity: intVal, prefectures: prefs });
-              }
-            }
-          }
-          setIntensityGroups(sortedGroups);
+        if (res) {
+          if (res.hypoLat != null) setHypoLat(res.hypoLat);
+          if (res.hypoLon != null) setHypoLon(res.hypoLon);
+          if (res.depthKm != null) setDepthKm(res.depthKm);
+          setStations(res.stations);
+          setIntensityGroups(res.intensityGroups);
         } else {
           setDetailError('詳細な震度・観測点データは取得できませんでした。概要情報を表示しています。');
         }
-      } catch (err: any) {
+      } catch {
         if (!isCancelled) {
           setDetailError('詳細データの取得中にエラーが発生しました。');
         }
@@ -422,6 +446,28 @@ export default function EarthquakeDetailView({
             {refreshing ? '更新中...' : '最新情報に更新'}
           </button>
 
+          <button
+            onClick={handleCopyObsUrl}
+            style={{
+              padding: '6px 14px',
+              backgroundColor: copiedObs ? '#16a34a' : '#3b82f6',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'background-color 0.15s ease'
+            }}
+            title="OBSのブラウザソースに貼り付けるためのURLをコピーします"
+          >
+            <i className={`fa-solid ${copiedObs ? 'fa-check' : 'fa-link'}`}></i>
+            {copiedObs ? 'OBS用URLをコピーしました' : 'OBS貼付用URLをコピー'}
+          </button>
+
           {refreshSuccess && (
             <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600, animation: 'fadeIn 0.2s ease-in' }}>
               ✓ 最新情報を取得しました
@@ -504,7 +550,7 @@ export default function EarthquakeDetailView({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
             <span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#dc2626', borderRadius: '50%', textAlign: 'center', color: '#fff', fontSize: '9px', lineHeight: '12px', fontWeight: 900 }}>✕</span> 震源
           </span>
-          {['7', '6強', '6弱', '5強', '5弱', '4', '3', '2', '1'].map(iv => {
+          {INTENSITY_ORDER.map(iv => {
             const c = getSeismicIntensityColor(iv);
             return (
               <span key={iv} style={{
