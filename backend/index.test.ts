@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePrefectureName } from './index';
+import defaultExport, { normalizePrefectureName, pruneExpiredTyphoons, parseQuakeCoordinate } from './index';
 
 describe('normalizePrefectureName', () => {
   it('should normalize Hokkaido regions to 北海道', () => {
@@ -27,8 +27,6 @@ describe('normalizePrefectureName', () => {
     expect(normalizePrefectureName('神奈川県')).toBe('神奈川県');
   });
 });
-
-import defaultExport from './index';
 
 describe('processEarthquakeToMemory', () => {
   it('should parse an array of earthquakes', () => {
@@ -99,18 +97,77 @@ describe('processEarthquakeToMemory', () => {
   });
 });
 
-import { pruneExpiredTyphoons, parseQuakeCoordinate } from './index';
-
 describe('pruneExpiredTyphoons', () => {
   it('should remove typhoons older than 3 days', () => {
     const now = new Date('2026-10-29T00:00:00Z').getTime();
     const typhoons = [
-      { tcNumber: '2627', updatedAt: '2026-10-07T12:00:00Z' }, // 22 days ago -> expired
-      { tcNumber: '2630', updatedAt: '2026-10-25T12:00:00Z' }, // 3.5 days ago -> expired
-      { tcNumber: '2631', updatedAt: '2026-10-28T15:00:00Z' }, // < 1 day ago -> active
+      { tcNumber: '2627', updatedAt: '2026-10-07T12:00:00Z' },
+      { tcNumber: '2630', updatedAt: '2026-10-25T12:00:00Z' },
+      { tcNumber: '2631', updatedAt: '2026-10-28T15:00:00Z' },
     ];
     const filtered = pruneExpiredTyphoons(typhoons, now);
     expect(filtered.map(t => t.tcNumber)).toEqual(['2631']);
+  });
+});
+
+describe('processTyphoonToMemory', () => {
+  it('should not overwrite newer typhoon analysis with older telegram and should merge 5-day forecasts', () => {
+    const typhoonsData: any[] = [];
+    const makeReport = (dateTime: string, lat: string, lon: string, forecastTimes: string[]) => ({
+      Body: {
+        MeteorologicalInfos: {
+          MeteorologicalInfo: [
+            {
+              DateTime: { '#text': dateTime, '@_type': '実況' },
+              Item: {
+                Kind: [
+                  { Property: { TyphoonNamePart: { Number: 2631, NameKana: 'インファ', Name: 'IN-FA' } } },
+                  { Property: { CenterPart: { Coordinate: { '@_type': '中心位置（度）', '#text': `+${lat}+${lon}/` }, Pressure: { '#text': 940 } } } }
+                ]
+              }
+            },
+            ...forecastTimes.map(ft => ({
+              DateTime: { '#text': ft, '@_type': '予報' },
+              Item: {
+                Kind: [
+                  { Property: { CenterPart: { ProbabilityCircle: { BasePoint: { '@_type': '中心位置（度）', '#text': '+20.0+145.0/' } } } } }
+                ]
+              }
+            }))
+          ]
+        }
+      }
+    });
+
+    // 1. Newer 5-day report (21:00 JST) with 24h & 120h forecasts
+    defaultExport.processTyphoonToMemory(
+      makeReport('2026-10-29T21:00:00+09:00', '16.6', '151.3', ['2026-10-30T21:00:00+09:00', '2026-11-03T21:00:00+09:00']),
+      'vptw61-new',
+      '2026-10-29T12:40:44Z',
+      typhoonsData
+    );
+    expect(typhoonsData.length).toBe(1);
+    expect(typhoonsData[0].current.lat).toBe(16.6);
+    expect(typhoonsData[0].forecasts.length).toBe(2);
+
+    // 2. Older report (03:00 JST) arriving out of order -> must be ignored
+    defaultExport.processTyphoonToMemory(
+      makeReport('2026-10-29T03:00:00+09:00', '15.6', '156.3', ['2026-10-30T03:00:00+09:00']),
+      'vptw61-old',
+      '2026-10-28T18:40:59Z',
+      typhoonsData
+    );
+    expect(typhoonsData[0].current.lat).toBe(16.6);
+    expect(typhoonsData[0].forecasts.length).toBe(2);
+
+    // 3. Same-time 3-day report (21:00 JST, only 24h forecast) -> must preserve 120h forecast
+    defaultExport.processTyphoonToMemory(
+      makeReport('2026-10-29T21:00:00+09:00', '16.6', '151.3', ['2026-10-30T21:00:00+09:00']),
+      'vptw60-same',
+      '2026-10-29T12:45:00Z',
+      typhoonsData
+    );
+    expect(typhoonsData[0].forecasts.length).toBe(2);
   });
 });
 
@@ -133,4 +190,3 @@ describe('parseQuakeCoordinate', () => {
     });
   });
 });
-

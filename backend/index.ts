@@ -38,7 +38,7 @@ const parser = new XMLParser({
   removeNSPrefix: true,
 });
 
-const CACHE_TTL_SECONDS = 60;
+const CACHE_TTL_SECONDS = 30;
 const TYPHOON_EXPIRE_DAYS = 3;
 
 const asArray = <T = any>(v: T | T[] | undefined | null): T[] =>
@@ -94,7 +94,8 @@ function extractCircleRadii(circle: any): { direction: string; radiusKm: number 
     const dir = ax?.Direction ? (typeof ax.Direction === 'object' ? ax.Direction['#text'] : ax.Direction) : '';
     for (const r of asArray(ax?.Radius)) {
       if (r?.['@_unit'] === 'km') {
-        radiiData.push({ direction: dir, radiusKm: parseFloat(r['#text']) || 0 });
+        const km = parseFloat(r['#text']) || 0;
+        if (km > 0) radiiData.push({ direction: dir || '', radiusKm: km });
       }
     }
   }
@@ -104,7 +105,8 @@ function extractCircleRadii(circle: any): { direction: string; radiusKm: number 
 function classifyTelegramCode(link: string): string {
   if (link.match(/_(VPWW(5[3-9]|6[0-1])|VXWW[4-5][0-9]|VXXX50)_/)) return 'VPWW';
   if (link.includes('_VXSE51_') || link.includes('_VXSE52_') || link.includes('_VXSE53_')) return 'VXSE';
-  if (link.includes('_VPTW6') || link.includes('_VPTI5')) return 'VPTW';
+  // 台風解析・予報情報（VPTW60〜69）のみ対象（テキスト主体のVPTI50等で座標が0上書きされるのを防止）
+  if (link.includes('_VPTW6')) return 'VPTW';
   return '';
 }
 
@@ -267,8 +269,8 @@ export default {
   },
 
   // ponytail: Unified parallel XML processor used by both updateJmaData and queue
-  async processXmlBatch(messages: { id: string; link: string; updated: string; telegramCode: string }[], env: Env) {
-    if (messages.length === 0) return;
+  async processXmlBatch(messages: { id: string; link: string; updated: string; telegramCode: string }[], env: Env, forceBosaiCheck = false) {
+    if (messages.length === 0 && !forceBosaiCheck) return;
 
     const [rawWarnings, rawEarthquakes, rawTyphoons] = await Promise.all([
       env.WEATHER_DATA_STORE.get('warnings', { type: 'json' }),
@@ -321,12 +323,18 @@ export default {
       }
     }
 
+    // 気象庁防災情報JSON（targetTc.json / forecast.json / specifications.json）と同期し、
+    // XMLフィードの取りこぼしや1時間毎の最新実況・過去進路を確実に反映する
+    if (typhoonsUpdated || forceBosaiCheck) {
+      const syncedFromBosai = await this.backfillTyphoonTracks(typhoonsData);
+      if (syncedFromBosai) typhoonsUpdated = true;
+    }
+
     const kvWrites: Promise<any>[] = [];
     if (warningsUpdated) kvWrites.push(env.WEATHER_DATA_STORE.put('warnings', JSON.stringify(warningsData)));
     if (earthquakesUpdated) kvWrites.push(env.WEATHER_DATA_STORE.put('earthquakes', JSON.stringify(earthquakesData)));
     if (typhoonsUpdated) {
       typhoonsData = pruneExpiredTyphoons(typhoonsData);
-      await this.backfillTyphoonTracks(typhoonsData);
       kvWrites.push(env.WEATHER_DATA_STORE.put('typhoons', JSON.stringify(typhoonsData)));
     }
 
@@ -384,29 +392,40 @@ export default {
       }
     }
 
-    let candidateEntries = Array.from(candidateMap.values()).sort(
+    // 新しい順にソートし、同一気象官署の古い警報電文（extra_l.xml内の過去3日分の重複VPWW）を除外して
+    // サブリクエスト上限超過や古い電文による遅延を防止する
+    const sortedNewestFirst = Array.from(candidateMap.values()).sort(
       (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime()
     );
 
-    if (isInitialSync) {
-      candidateEntries = [
-        ...candidateEntries.filter(e => e.telegramCode === 'VPTW').slice(0, 10),
-        ...candidateEntries.filter(e => e.telegramCode === 'VXSE').slice(0, 30),
-        ...candidateEntries.filter(e => e.telegramCode === 'VPWW').slice(0, 100),
-      ];
+    // すべての候補IDを処理済みセットに記録（スキップされた古い重複電文が次回以降再スキャンされるのを防ぐ）
+    for (const entry of sortedNewestFirst) processedFeedsSet.add(entry.id);
+
+    const vptwEntries = sortedNewestFirst.filter(e => e.telegramCode === 'VPTW').slice(0, 20);
+    const vxseEntries = sortedNewestFirst.filter(e => e.telegramCode === 'VXSE').slice(0, 35);
+
+    const seenVpwwOfficeKey = new Set<string>();
+    const vpwwEntries: typeof sortedNewestFirst = [];
+    for (const entry of sortedNewestFirst) {
+      if (entry.telegramCode !== 'VPWW') continue;
+      const officeMatch = entry.link.match(/_([A-Z]{4}\d{2}_\d{6})\.xml$/);
+      const officeKey = officeMatch ? officeMatch[1] : entry.id;
+      if (!seenVpwwOfficeKey.has(officeKey)) {
+        seenVpwwOfficeKey.add(officeKey);
+        vpwwEntries.push(entry);
+        if (vpwwEntries.length >= 100) break;
+      }
     }
 
     // 古い順（時系列順）に処理することで、最新の電文が確実に過去の電文を上書きする
-    const messagesToProcess = candidateEntries.sort(
+    const messagesToProcess = [...vptwEntries, ...vxseEntries, ...vpwwEntries].sort(
       (a, b) => new Date(a.updated).getTime() - new Date(b.updated).getTime()
     );
 
-    for (const msg of messagesToProcess) processedFeedsSet.add(msg.id);
-
-    await this.processXmlBatch(messagesToProcess, env);
+    await this.processXmlBatch(messagesToProcess, env, true);
 
     if (processedFeedsSet.size > initialProcessedCount || isInitialSync) {
-      await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(Array.from(processedFeedsSet).slice(-1000)));
+      await env.WEATHER_DATA_STORE.put('processed_feeds', JSON.stringify(Array.from(processedFeedsSet).slice(-5000)));
     }
   },
 
@@ -559,31 +578,145 @@ export default {
     }
   },
 
-  async backfillTyphoonTracks(typhoonsData: any[]) {
+  async backfillTyphoonTracks(typhoonsData: any[]): Promise<boolean> {
+    let changed = false;
     try {
       const res = await fetch('https://www.jma.go.jp/bosai/typhoon/data/targetTc.json', { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
-      if (!res.ok) return;
+      if (!res.ok) return false;
       const targets = await res.json() as any[];
       for (const t of targets) {
-        const ty = typhoonsData.find((x: any) => String(x.tcNumber) === String(t.typhoonNumber));
-        if (!ty || !t.tropicalCyclone) continue;
-        const fRes = await fetch(`https://www.jma.go.jp/bosai/typhoon/data/${t.tropicalCyclone}/forecast.json`, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } });
-        if (!fRes.ok) continue;
-        const parts = await fRes.json() as any[];
-        const track = parts.find((p: any) => p.track)?.track;
-        if (track?.typhoon?.length) ty.track = track.typhoon;
-        if (track?.preTyphoon?.length) ty.preTrack = track.preTyphoon;
+        if (!t.tropicalCyclone || !t.typhoonNumber) continue;
+        const tcNumStr = String(t.typhoonNumber).replace(/^T/i, '');
+        let ty = typhoonsData.find((x: any) => String(x.tcNumber) === tcNumStr);
+        const issueTimeMs = t.issue ? new Date(t.issue).getTime() : 0;
+        const tyUpdatedMs = ty?.updatedAt ? new Date(ty.updatedAt).getTime() : 0;
+        const needsSpecSync = !ty || (issueTimeMs > tyUpdatedMs);
+        const needsTrackSync = !ty?.track?.length || needsSpecSync;
+
+        if (!needsTrackSync && !needsSpecSync) continue;
+
+        const [fRes, sRes] = await Promise.all([
+          fetch(`https://www.jma.go.jp/bosai/typhoon/data/${t.tropicalCyclone}/forecast.json`, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } }),
+          needsSpecSync
+            ? fetch(`https://www.jma.go.jp/bosai/typhoon/data/${t.tropicalCyclone}/specifications.json`, { headers: { 'User-Agent': 'Jma-Dashboard/1.0' } })
+            : Promise.resolve(null),
+        ]);
+
+        let track: [number, number][] = ty?.track || [];
+        let preTrack: [number, number][] = ty?.preTrack || [];
+        if (fRes.ok) {
+          const parts = await fRes.json() as any[];
+          const trackPart = parts.find((p: any) => p.track)?.track;
+          if (trackPart?.typhoon?.length) { track = trackPart.typhoon; changed = true; }
+          if (trackPart?.preTyphoon?.length) { preTrack = trackPart.preTyphoon; changed = true; }
+        }
+
+        if (sRes && sRes.ok) {
+          const specs = await sRes.json() as any[];
+          const titlePart = specs.find((p: any) => p.part === 'title') || {};
+          const analysisPart = specs.find((p: any) => p.part?.jp === '実況' || p.advancedHours === 0);
+          if (analysisPart && Array.isArray(analysisPart.position?.deg)) {
+            const [lat, lon] = analysisPart.position.deg;
+            const validJst = analysisPart.validtime?.JST || t.issue;
+            const prevValidMs = ty?.current?.dateTime ? new Date(ty.current.dateTime).getTime() : 0;
+            const newValidMs = validJst ? new Date(validJst).getTime() : 0;
+
+            if (!ty || newValidMs >= prevValidMs) {
+              const stormRadii = asArray(analysisPart.stormWarning).map((sw: any) => ({
+                direction: (typeof sw.area === 'object' ? sw.area?.jp : sw.area) || '',
+                radiusKm: Number(sw.range?.km) || 0,
+              })).filter((r: any) => r.radiusKm > 0);
+
+              const galeRadii = asArray(analysisPart.galeWarning).map((gw: any) => ({
+                direction: (typeof gw.area === 'object' ? gw.area?.jp : gw.area) || '',
+                radiusKm: Number(gw.range?.km) || 0,
+              })).filter((r: any) => r.radiusKm > 0);
+
+              const forecasts = specs
+                .filter((p: any) => p.advancedHours && p.advancedHours > 0 && Array.isArray(p.position?.deg))
+                .map((p: any) => {
+                  const fStorm = asArray(p.stormWarning).map((sw: any) => ({
+                    direction: (typeof sw.area === 'object' ? sw.area?.jp : sw.area) || '',
+                    radiusKm: Number(sw.range?.km) || 0,
+                  })).filter((r: any) => r.radiusKm > 0);
+                  const cRad = Number(p.probabilityCircleRadius?.km) || 0;
+                  return {
+                    type: p.part?.jp || `予報　${p.advancedHours}時間後`,
+                    dateTime: p.validtime?.JST || '',
+                    lat: p.position.deg[0],
+                    lon: p.position.deg[1],
+                    circleRadiusKm: cRad,
+                    pressure: Number(p.pressure) || 0,
+                    maxWind: Number(p.maximumWind?.sustained?.['m/s']) || 0,
+                    gustWind: Number(p.maximumWind?.gust?.['m/s']) || 0,
+                    direction: p.course || '',
+                    speedKmh: Number(p.speed?.['km/h']) || 0,
+                    typhoonClass: p.category?.jp ? `${p.category.jp}(${p.category.en || 'TY'})` : '台風(TY)',
+                    intensity: p.intensity !== '-' ? (p.intensity || '') : '',
+                    location: p.location || '',
+                    stormRadii: fStorm,
+                    galeRadii: cRad > 0 ? [{ direction: '', radiusKm: cRad }] : [],
+                  };
+                });
+
+              const catJp = analysisPart.category?.jp || titlePart.category?.jp || '台風';
+              const catEn = analysisPart.category?.en || titlePart.category?.en || 'TY';
+              const updatedObj = {
+                track,
+                preTrack,
+                xmlId: ty?.xmlId || `bosai-${t.tropicalCyclone}-${t.issue}`,
+                tcNumber: Number(tcNumStr) || tcNumStr,
+                name: titlePart.name?.jp || ty?.name || '台風',
+                nameEn: (titlePart.name?.en || ty?.nameEn || '').toUpperCase(),
+                headlineText: ty?.headlineText || '',
+                updatedAt: titlePart.issue?.UTC || t.issue || new Date().toISOString(),
+                current: {
+                  dateTime: validJst,
+                  lat,
+                  lon,
+                  location: analysisPart.location || ty?.current?.location || '',
+                  direction: analysisPart.course || ty?.current?.direction || '',
+                  speedKmh: Number(analysisPart.speed?.['km/h']) || 0,
+                  pressure: Number(analysisPart.pressure) || ty?.current?.pressure || 0,
+                  maxWind: Number(analysisPart.maximumWind?.sustained?.['m/s']) || 0,
+                  gustWind: Number(analysisPart.maximumWind?.gust?.['m/s']) || 0,
+                  typhoonClass: `${catJp}(${catEn})`,
+                  intensityClass: analysisPart.intensity && analysisPart.intensity !== '-' ? analysisPart.intensity : '',
+                  areaClass: analysisPart.scale && analysisPart.scale !== '-' ? analysisPart.scale : '',
+                  stormRadii: stormRadii.length > 0 ? stormRadii : (ty?.current?.stormRadii || []),
+                  galeRadii: galeRadii.length > 0 ? galeRadii : (ty?.current?.galeRadii || []),
+                  stormCenterLat: ty?.current?.stormCenterLat ?? null,
+                  stormCenterLon: ty?.current?.stormCenterLon ?? null,
+                  galeCenterLat: ty?.current?.galeCenterLat ?? null,
+                  galeCenterLon: ty?.current?.galeCenterLon ?? null,
+                },
+                forecasts: forecasts.length > 0 ? forecasts : (ty?.forecasts || []),
+              };
+
+              if (ty) {
+                Object.assign(ty, updatedObj);
+              } else {
+                typhoonsData.push(updatedObj);
+              }
+              changed = true;
+            }
+          }
+        } else if (ty) {
+          ty.track = track;
+          ty.preTrack = preTrack;
+        }
       }
     } catch (e) {
-      console.error('Failed to backfill typhoon tracks', e);
+      console.error('Failed to sync typhoon tracks/specs from JMA Bosai', e);
     }
+    return changed;
   },
 
   processTyphoonToMemory(report: any, xmlId: string, updated: string, typhoonsData: any[]) {
     const metInfos = asArray(report.Body?.MeteorologicalInfos?.MeteorologicalInfo);
     if (metInfos.length === 0) return;
 
-    let tcNumber = '', name = '', nameEn = '', typhoonClass = '', intensityClass = '', areaClass = '';
+    let tcNumber: any = '', name = '', nameEn = '', typhoonClass = '', intensityClass = '', areaClass = '';
     let centerLat = 0, centerLon = 0, location = '', direction = '', speedKmh = 0, pressure = 0, maxWind = 0, gustWind = 0;
     let stormRadii: any[] = [], galeRadii: any[] = [];
     let stormCenterLat: number | null = null, stormCenterLon: number | null = null;
@@ -620,7 +753,7 @@ export default {
             const tcText = typeof tc === 'object' ? tc['#text'] : tc;
             const icText = typeof ic === 'object' ? ic['#text'] : ic;
             const acText = typeof ac === 'object' ? ac['#text'] : ac;
-            if (forecastType === '実況') {
+            if (isCurrent) {
               typhoonClass = tcText || typhoonClass;
               intensityClass = icText || intensityClass;
               areaClass = acText || areaClass;
@@ -730,37 +863,67 @@ export default {
       }
     }
 
-    if (tcNumber) {
-      if (!name) name = '熱帯低気圧';
-      let track: [number, number][] = [];
-      let preTrack: [number, number][] = [];
-      for (let i = typhoonsData.length - 1; i >= 0; i--) {
-        if (typhoonsData[i].tcNumber === tcNumber) {
-          const prev = typhoonsData[i];
-          track = Array.isArray(prev.track) ? prev.track : [];
-          preTrack = Array.isArray(prev.preTrack) ? prev.preTrack : [];
-          const pc = prev.current;
-          const last = track[track.length - 1];
-          if (pc?.lat && pc?.lon && pc.dateTime !== currentDateTimeStr && (!last || last[0] !== pc.lat || last[1] !== pc.lon)) {
-            track = [...track, [pc.lat, pc.lon]];
-          }
-          typhoonsData.splice(i, 1);
+    // 中心座標を持たない電文（解説のみの電文等）で既存データを破壊しないようガード
+    if (!tcNumber || (!centerLat && !centerLon)) return;
+
+    if (!name) name = '熱帯低気圧';
+    let track: [number, number][] = [];
+    let preTrack: [number, number][] = [];
+    let mergedForecasts = forecasts;
+    const incomingTimeMs = new Date(currentDateTimeStr || updated).getTime();
+
+    for (let i = typhoonsData.length - 1; i >= 0; i--) {
+      if (String(typhoonsData[i].tcNumber) === String(tcNumber)) {
+        const prev = typhoonsData[i];
+        const prevTimeMs = new Date(prev.current?.dateTime || prev.updatedAt).getTime();
+
+        // 既に新しい実況データが存在する場合は古い電文で上書きしない
+        if (!isNaN(prevTimeMs) && !isNaN(incomingTimeMs) && incomingTimeMs < prevTimeMs) {
+          return;
         }
+
+        track = Array.isArray(prev.track) ? prev.track : [];
+        preTrack = Array.isArray(prev.preTrack) ? prev.preTrack : [];
+        const pc = prev.current;
+        const last = track[track.length - 1];
+        if (pc?.lat && pc?.lon && pc.dateTime !== currentDateTimeStr && (!last || last[0] !== pc.lat || last[1] !== pc.lon)) {
+          track = [...track, [pc.lat, pc.lon]];
+        }
+
+        // 同一実況時刻で3日予報(VPTW60)と5日予報(VPTW61)が前後して届いた場合、長期予報(96h/120h)が消えないようマージ
+        if (Array.isArray(prev.forecasts) && prev.forecasts.length > 0) {
+          const forecastMap = new Map<string, any>();
+          for (const pf of prev.forecasts) {
+            if (pf.dateTime && new Date(pf.dateTime).getTime() > incomingTimeMs) {
+              forecastMap.set(pf.dateTime, pf);
+            }
+          }
+          for (const nf of forecasts) {
+            if (nf.dateTime) forecastMap.set(nf.dateTime, nf);
+          }
+          mergedForecasts = Array.from(forecastMap.values()).sort(
+            (a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
+          );
+        }
+
+        if (!name || name === '熱帯低気圧') name = prev.name || name;
+        if (!nameEn) nameEn = prev.nameEn || '';
+        typhoonsData.splice(i, 1);
       }
-
-      typhoonsData.push({
-        track, preTrack, xmlId, tcNumber, name, nameEn, headlineText, updatedAt: updated,
-        current: {
-          dateTime: currentDateTimeStr || updated, lat: centerLat, lon: centerLon,
-          location, direction, speedKmh, pressure, maxWind, gustWind,
-          typhoonClass, intensityClass, areaClass, stormRadii, galeRadii,
-          stormCenterLat, stormCenterLon, galeCenterLat, galeCenterLon
-        },
-        forecasts,
-      });
-
-      if (typhoonsData.length > 20) typhoonsData.shift();
     }
+
+    typhoonsData.push({
+      track, preTrack, xmlId, tcNumber, name, nameEn, headlineText, updatedAt: updated,
+      current: {
+        dateTime: currentDateTimeStr || updated, lat: centerLat, lon: centerLon,
+        location, direction, speedKmh, pressure, maxWind, gustWind,
+        typhoonClass, intensityClass, areaClass, stormRadii, galeRadii,
+        stormCenterLat, stormCenterLon, galeCenterLat, galeCenterLon
+      },
+      forecasts: mergedForecasts,
+    });
+
+    if (typhoonsData.length > 20) typhoonsData.shift();
   },
 
   async syncInitialJmaData(env: Env) {

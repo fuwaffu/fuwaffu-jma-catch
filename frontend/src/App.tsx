@@ -35,6 +35,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [flapEpoch, setFlapEpoch] = useState(0);
   const [selectedTyphoon, setSelectedTyphoon] = useState<any | null>(null);
   const [selectedEarthquake, setSelectedEarthquake] = useState<any | null>(null);
 
@@ -115,11 +116,11 @@ export default function App() {
   };
 
   // 初回データ読み込み
-  const fetchData = async (bustCache = false) => {
+  const fetchData = async (bustCache = false, skipTrigger = false) => {
     setLoading(true);
     setError('');
     try {
-      if (bustCache) {
+      if (bustCache && !skipTrigger) {
         await fetch(`${API_BASE}/api/trigger-update`).catch(() => {});
       }
       const cacheBuster = bustCache ? `?_t=${Date.now()}` : '';
@@ -162,6 +163,7 @@ export default function App() {
         const statusData = await statusRes.json();
         setLastUpdated(statusData.lastUpdated || null);
       }
+      if (bustCache) setFlapEpoch(c => c + 1);
     } catch (e: any) {
       setError(e.message);
     }
@@ -187,7 +189,7 @@ export default function App() {
         if (!res.ok) return;
         const data = await res.json();
         if (data.lastUpdated && lastUpdatedRef.current && data.lastUpdated !== lastUpdatedRef.current) {
-          fetchData();
+          fetchData(true, true);
         }
       } catch (e) {
         console.error('[Status Check Error]', e);
@@ -450,7 +452,7 @@ export default function App() {
                     </tr>
                   )}
                 </thead>
-                <tbody key={`${activeTab}-${viewMode}-${selectedParentArea || ''}-${quakeSortMode}`}>
+                <tbody key={`${activeTab}-${viewMode}-${selectedParentArea || ''}-${quakeSortMode}-${lastUpdated || ''}-${flapEpoch}`}>
                   {activeTab === 'warnings' && (() => {
                     const PREF_CATEGORY_MAP: Record<string, string[]> = {
                       "北海道": [
@@ -494,10 +496,10 @@ export default function App() {
 
                     return CATEGORY_ORDER.map(cat => {
                       if (!warningsByCategory[cat] || warningsByCategory[cat].length === 0) return null;
-                      const catDelay = Math.min(flapRowCounter++ * 22, 350);
+                      const catDelay = Math.min(flapRowCounter++ * 18, 420);
                       return (
                         <React.Fragment key={cat}>
-                          <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', animationDelay: `${catDelay}ms` }}>
+                          <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', '--flap-delay': `${catDelay}ms` } as React.CSSProperties}>
                             <td colSpan={3} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>{cat}</td>
                           </tr>
                           {Object.entries(
@@ -510,16 +512,16 @@ export default function App() {
                           ).map(([pref, rows]: [string, any]) => (
                             <React.Fragment key={pref}>
                               {(viewMode === 'prefecture' || viewMode === 'region') && pref !== cat && (
-                                <tr className="split-flap-row" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', animationDelay: `${Math.min(flapRowCounter++ * 22, 350)}ms` }}>
+                                <tr className="split-flap-row" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', '--flap-delay': `${Math.min(flapRowCounter++ * 18, 420)}ms` } as React.CSSProperties}>
                                   <td colSpan={3} style={{ padding: '6px 16px', fontWeight: 600, color: '#475569', fontSize: '0.8rem' }}>
                                     {pref}
                                   </td>
                                 </tr>
                               )}
                               {rows.map((row: any, index: number) => {
-                                const rowDelay = Math.min(flapRowCounter++ * 22, 350);
+                                const rowDelay = Math.min(flapRowCounter++ * 18, 420);
                                 return (
-                                <tr key={row.area || index} className="split-flap-row fade-update" style={{ borderBottom: '1px solid #f1f5f9', animationDelay: `${rowDelay}ms` }}
+                                <tr key={row.area || index} className="split-flap-row fade-update" style={{ borderBottom: '1px solid #f1f5f9', '--flap-delay': `${rowDelay}ms` } as React.CSSProperties}
                                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                                 >
@@ -548,12 +550,13 @@ export default function App() {
                                         .map((w: any, idx: number) => {
                                           const displayName = formatWarningName(w.warningName);
                                           return (
-                                            <span key={idx} style={{
+                                            <span key={idx} className="flap-badge" style={{
                                               padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
                                               whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                              '--badge-idx': idx,
                                               ...getWarningColor(w.warningLevel)
-                                            }}>
+                                            } as React.CSSProperties}>
                                               {displayName}
                                             </span>
                                           );
@@ -585,10 +588,10 @@ export default function App() {
                       return REGIONS.map((reg) => {
                         const list = byRegion[reg];
                         if (!list || list.length === 0) return null;
-                        const headerDelay = Math.min(eqRegCounter++ * 25, 350);
+                        const headerDelay = Math.min(eqRegCounter++ * 20, 420);
                         return (
                           <React.Fragment key={reg}>
-                            <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', animationDelay: `${headerDelay}ms` }}>
+                            <tr className="split-flap-row" style={{ backgroundColor: '#e2e8f0', borderBottom: '1px solid #cbd5e1', '--flap-delay': `${headerDelay}ms` } as React.CSSProperties}>
                               <td colSpan={4} style={{ padding: '8px 16px', fontWeight: 700, color: '#1e293b' }}>
                                 📍 {reg} ({list.length}件)
                               </td>
@@ -622,12 +625,12 @@ export default function App() {
                     const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : ty.tcNumber;
                     const displayName = `台風${typhoonNum}号（${ty.name}）`;
                     const intensityText = [ty.current?.intensityClass, ty.current?.areaClass].filter(Boolean).join(' / ') || '—';
-                    const delay = Math.min(index * 25, 350);
+                    const delay = Math.min(index * 20, 420);
                     return (
                       <tr 
                         key={ty.tcNumber || index} 
                         className="split-flap-row fade-update" 
-                        style={{ borderBottom: '1px solid #f1f5f9', animationDelay: `${delay}ms` }}
+                        style={{ borderBottom: '1px solid #f1f5f9', '--flap-delay': `${delay}ms` } as React.CSSProperties}
                         onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
                       >
@@ -654,7 +657,8 @@ export default function App() {
                         <TyphoonDetailView 
                           typhoon={selectedTyphoon} 
                           onBack={handleNavBack} 
-                          use24HourFormat={use24HourFormat} 
+                          use24HourFormat={use24HourFormat}
+                          onRefresh={() => fetchData(true)}
                         />
                       </td>
                     </tr>
@@ -693,12 +697,12 @@ export default function App() {
     const formattedIntensity = formatIntensity(eq.maxIntensity);
     const regionName = getRegionFromHypocenter(eq.hypocenterName);
 
-    const delay = Math.min(index * 22, 350);
+    const delay = Math.min(index * 18, 420);
     return (
       <tr
         key={eq.xmlId || eq.eventId || index}
         className="split-flap-row fade-update"
-        style={{ borderBottom: '1px solid #f1f5f9', animationDelay: `${delay}ms` }}
+        style={{ borderBottom: '1px solid #f1f5f9', '--flap-delay': `${delay}ms` } as React.CSSProperties}
         onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f8fafc')}
         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       >
@@ -724,12 +728,15 @@ export default function App() {
           {eq.magnitude ? `M${eq.magnitude}` : '—'}
         </td>
         <td style={{ padding: '12px 16px' }}>
-          <span style={{
+          <span className="flap-badge" style={{
             padding: '4px 8px',
             borderRadius: '4px',
             fontSize: '0.75rem',
             fontWeight: 700,
             whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             ...getSeismicIntensityColor(formattedIntensity)
           }}>
             震度 {formattedIntensity}
@@ -741,15 +748,36 @@ export default function App() {
 }
 
 // === 台風詳細ビュー（Leaflet地図＋情報パネル） ===
-function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any; onBack: () => void; use24HourFormat: boolean }) {
+function TyphoonDetailView({
+  typhoon,
+  onBack,
+  use24HourFormat,
+  onRefresh,
+}: {
+  typhoon: any;
+  onBack: () => void;
+  use24HourFormat: boolean;
+  onRefresh?: () => Promise<void>;
+}) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const [copiedObs, setCopiedObs] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const num = String(typhoon.tcNumber);
   const typhoonNum = num.length >= 2 ? parseInt(num.slice(-2)) : typhoon.tcNumber;
   const displayName = `台風${typhoonNum}号（${typhoon.name}）`;
   const cur = typhoon.current || {};
+
+  const handleRefresh = async () => {
+    if (refreshing || !onRefresh) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleCopyObsUrl = () => {
     const url = `${window.location.origin}/?mode=obs&type=typhoon&id=${encodeURIComponent(String(typhoon.tcNumber))}`;
@@ -775,53 +803,56 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
   };
 
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    if (!mapRef.current) return;
 
     const lat = cur.lat || 30;
     const lon = cur.lon || 135;
-    const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
-    map.createPane('bgPane');
-    map.getPane('bgPane')!.style.zIndex = '200';
-    mapInstanceRef.current = map;
 
-    const targetMap = mapInstanceRef.current;
-    if (targetMap) {
+    if (!mapInstanceRef.current) {
+      const map = L.map(mapRef.current, { zoomControl: true }).setView([lat, lon], 5);
+      map.createPane('bgPane');
+      map.getPane('bgPane')!.style.zIndex = '200';
+      mapInstanceRef.current = map;
+
       fetch('/world_50m.geojson')
         .then(res => res.json())
         .then(data => {
           if (!mapInstanceRef.current) return;
           const style = { fillColor: '#dcfce7', color: '#166534', weight: 1, fillOpacity: 1 };
-          const bgLayer = L.geoJSON(data, { style, pane: 'bgPane' });
-          (bgLayer as any).isBaseMap = true;
-          bgLayer.eachLayer((l: any) => (l.isBaseMap = true));
-          bgLayer.addTo(targetMap);
+          const addGeo = (geo: any) => {
+            const layer = L.geoJSON(geo, { style, pane: 'bgPane' });
+            (layer as any).isBaseMap = true;
+            layer.eachLayer((l: any) => (l.isBaseMap = true));
+            layer.addTo(mapInstanceRef.current);
+          };
+          addGeo(data);
 
           // 経度180度での切れ目防止
           const shiftedData = JSON.parse(JSON.stringify(data));
-          shiftedData.features.forEach((f: any) => {
-            if (f.geometry) {
-              const shiftCoords = (coords: any[]) => {
-                if (typeof coords[0] === 'number') coords[0] += 360;
-                else coords.forEach(shiftCoords);
-              };
-              shiftCoords(f.geometry.coordinates);
-            }
-          });
-          const bgLayerRight = L.geoJSON(shiftedData, { style, pane: 'bgPane' });
-          (bgLayerRight as any).isBaseMap = true;
-          bgLayerRight.eachLayer((l: any) => (l.isBaseMap = true));
-          bgLayerRight.addTo(targetMap);
+          const shiftCoords = (coords: any[]) => {
+            if (typeof coords[0] === 'number') coords[0] += 360;
+            else coords.forEach(shiftCoords);
+          };
+          shiftedData.features.forEach((f: any) => f.geometry && shiftCoords(f.geometry.coordinates));
+          addGeo(shiftedData);
         })
         .catch(e => console.error('Failed to load world geojson', e));
     }
+
+    const map = mapInstanceRef.current;
+    map.eachLayer((layer: any) => {
+      if (!layer.isBaseMap) map.removeLayer(layer);
+    });
 
     const trackPoints = drawTyphoon(map, typhoon, { isObs: false, use24HourFormat });
     if (trackPoints.length > 1) {
       map.fitBounds(L.latLngBounds(trackPoints).pad(0.3), { maxZoom: 6 });
     } else {
-      map.setZoom(6);
+      map.setView([lat, lon], 6);
     }
+  }, [typhoon, use24HourFormat]);
 
+  useEffect(() => {
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
@@ -836,6 +867,29 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
       <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <button onClick={onBack} style={{ padding: '6px 14px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>← 一覧に戻る</button>
+          {onRefresh && (
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              style={{
+                padding: '6px 14px',
+                backgroundColor: refreshing ? '#94a3b8' : '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: refreshing ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                transition: 'background-color 0.15s ease'
+              }}
+              title="最新の台風情報を再取得します"
+            >
+              <i className={`fa-solid fa-arrows-rotate${refreshing ? ' fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
+              {refreshing ? '更新中...' : '最新情報に更新'}
+            </button>
+          )}
           <button
             onClick={handleCopyObsUrl}
             style={{
@@ -859,7 +913,9 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
           </button>
           <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#1e293b' }}>🌀 {displayName}</h2>
         </div>
-        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>更新: {new Date(typhoon.updatedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</span>
+        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+          実況: {cur.dateTime ? new Date(cur.dateTime).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '—'} / 更新: {new Date(typhoon.updatedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+        </span>
       </div>
 
       {/* 地図 */}
@@ -873,7 +929,7 @@ function TyphoonDetailView({ typhoon, onBack, use24HourFormat }: { typhoon: any;
         <InfoCard label="中心気圧" value={cur.pressure ? `${cur.pressure} hPa` : '—'} />
         <InfoCard label="最大風速" value={cur.maxWind ? `${cur.maxWind} m/s` : '—'} />
         <InfoCard label="最大瞬間風速" value={cur.gustWind ? `${cur.gustWind} m/s` : '—'} />
-        <InfoCard label="進行方向・速さ" value={`${cur.direction || '—'} ${cur.speed ? `${cur.speed} km/h` : ''}`} />
+        <InfoCard label="進行方向・速さ" value={`${cur.direction || '—'} ${(cur.speedKmh || cur.speed) ? `${cur.speedKmh || cur.speed} km/h` : ''}`} />
         <InfoCard label="位置" value={cur.location || `${cur.lat?.toFixed(1)}°N, ${cur.lon?.toFixed(1)}°E`} />
       </div>
 
