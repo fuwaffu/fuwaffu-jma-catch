@@ -138,7 +138,7 @@ export default function App() {
       if (bustCache && !skipTrigger) {
         await fetch(`${API_BASE}/api/trigger-update`).catch(() => {});
       }
-      const cacheBuster = bustCache ? `?_t=${Date.now()}` : '';
+      const cacheBuster = (bustCache || skipTrigger) ? `?_t=${Date.now()}` : '';
       const [warningsRes, earthquakesRes, typhoonsRes, statusRes] = await Promise.all([
         fetch(`${API_BASE}/api/warnings${cacheBuster}`),
         fetch(`${API_BASE}/api/earthquakes${cacheBuster}`),
@@ -185,7 +185,7 @@ export default function App() {
       }
       prevSigsRef.current = nextSigs;
 
-      const shouldAnimateUpdate = hasInitialLoadedRef.current && (bustCache || changedKeys.size > 0);
+      const shouldAnimateUpdate = hasInitialLoadedRef.current && ((bustCache && !skipTrigger) || changedKeys.size > 0);
       if (shouldAnimateUpdate) {
         setIsFadingOut(true);
         await new Promise(resolve => setTimeout(resolve, 180));
@@ -226,33 +226,12 @@ export default function App() {
     setLoading(false);
   };
 
-  const lastUpdatedRef = useRef<string | null>(null);
-  lastUpdatedRef.current = lastUpdated;
-
   useEffect(() => {
     fetchData();
     const interval = setInterval(() => {
-      fetchData();
-    }, 60000); // 1分ごと自動取得
+      fetchData(false, true);
+    }, 300000); // 5分ごと自動取得
     return () => clearInterval(interval);
-  }, []);
-
-  // バックエンドの最終更新時刻を監視し、新着電文が反映されたら即座に再取得する
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/status`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.lastUpdated && lastUpdatedRef.current && data.lastUpdated !== lastUpdatedRef.current) {
-          fetchData(true, true);
-        }
-      } catch (e) {
-        console.error('[Status Check Error]', e);
-      }
-    };
-    const intervalId = setInterval(checkStatus, 10000);
-    return () => clearInterval(intervalId);
   }, []);
 
   // 気象警報のフィルタリング

@@ -4,6 +4,8 @@ body {
   background-color: #f1f5f9;
   color: #0f172a;
   overflow-y: scroll;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 @keyframes spin {
@@ -16,41 +18,44 @@ body {
   display: inline-block;
 }
 
-/* 既存リストのフェードアウト状態 */
+/* 既存リストのフェードアウト状態（transformを使わずopacityのみで制御し文字のにじみを防止） */
 .list-tbody {
-  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+  transition: opacity 0.16s ease-out;
   opacity: 1;
-  transform: translateY(0);
 }
 
 .list-tbody.is-fading-out {
   opacity: 0;
-  transform: translateY(6px);
   pointer-events: none;
 }
 
 /* 更新部分より上の変化なし項目（静かにフェードイン） */
 @keyframes rowFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* 更新部分より下の項目を押し下げるアニメーション */
-@keyframes rowPushDown {
   0% {
     opacity: 0;
-    transform: translateY(-38px);
-  }
-  35% {
-    opacity: 0.85;
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
+  }
+}
+
+/* 更新部分より下の項目を押し下げるアニメーション（100%でtransform: noneに戻しGPUレイヤーを解除して文字を鮮明化） */
+@keyframes rowPushDown {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -32px, 0);
+  }
+  40% {
+    opacity: 0.9;
+  }
+  99.9% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -58,39 +63,43 @@ body {
 @keyframes rowSlideIn {
   0% {
     opacity: 0;
-    transform: translateX(-28px) translateY(-8px);
+    transform: translate3d(-24px, -6px, 0);
     background-color: #e0f2fe;
   }
   65% {
     opacity: 1;
-    transform: translateX(0) translateY(0);
+    transform: translate3d(0, 0, 0);
     background-color: #eff6ff;
+  }
+  99.9% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
   100% {
     opacity: 1;
-    transform: translateX(0) translateY(0);
+    transform: none;
   }
 }
 
 .row-fade-in {
-  animation: rowFadeIn 0.22s ease-out both;
+  animation: rowFadeIn 0.2s ease-out both;
   animation-delay: var(--row-delay, 0ms);
 }
 
 .row-push-down {
-  animation: rowPushDown 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rowPushDown 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: var(--row-delay, 0ms);
-  will-change: transform, opacity;
 }
 
 .row-slide-in {
-  animation: rowSlideIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(var(--row-delay, 0ms) + 70ms);
-  will-change: transform, opacity, background-color;
+  animation: rowSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--row-delay, 0ms) + 60ms);
 }
 
+/* 不透明背景を明示してアニメーション中・直後のサブピクセルアンチエイリアス（ClearType）のにじみを防止 */
 .fade-update {
-  transition: background-color 0.5s ease;
+  background-color: #ffffff;
+  transition: background-color 0.3s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {

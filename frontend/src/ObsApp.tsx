@@ -42,7 +42,7 @@ export default function ObsApp() {
       } catch {}
     };
     checkStatus();
-    const intervalId = setInterval(checkStatus, 5000);
+    const intervalId = setInterval(checkStatus, 300000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -102,7 +102,7 @@ function ObsEarthquakeView({ idParam, timeParam }: { idParam: string | null; tim
     };
 
     fetchEq();
-    const interval = setInterval(fetchEq, 60000);
+    const interval = setInterval(fetchEq, 300000);
     window.addEventListener('forceFetchData', fetchEq);
     return () => {
       clearInterval(interval);
@@ -383,7 +383,7 @@ function ObsTyphoonView({ typhoonIdParam }: { typhoonIdParam: string | null }) {
     };
     
     fetchData();
-    const interval = setInterval(fetchData, 60000);
+    const interval = setInterval(fetchData, 300000);
     window.addEventListener('forceFetchData', fetchData);
     return () => {
       clearInterval(interval);
