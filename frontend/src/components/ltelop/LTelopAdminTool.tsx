@@ -820,7 +820,7 @@ export default function LTelopAdminTool({
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           {[
                             { id: 'prefecture', label: '都道府県ごと (東京都)' },
-                            { id: 'region', label: '地方ごと (東京都・東京地方)' },
+                            { id: 'region', label: '地方ごと (東京都　東京地方)' },
                             { id: 'municipality', label: '市区町村ごと (東京都・千代田区)' },
                           ].map(opt => (
                             <button
@@ -1317,7 +1317,7 @@ export default function LTelopAdminTool({
                       style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.84rem' }}
                     >
                       <option value="prefecture">都道府県ごと（例: 東京都 大雨警報）</option>
-                      <option value="region">都道府県内の地方ごと（例: 東京都・東京地方 大雨警報）</option>
+                      <option value="region">都道府県内の地方ごと（例: 東京都　東京地方 大雨警報）</option>
                       <option value="municipality">市区町村ごと（例: 東京都・千代田区 大雨警報）</option>
                     </select>
                   </div>

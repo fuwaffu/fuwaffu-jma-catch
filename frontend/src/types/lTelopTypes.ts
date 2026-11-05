@@ -166,6 +166,7 @@ export interface TelopItem {
   areaName?: string;
   prefectureName?: string;
   subAreaName?: string;
+  areaLevel?: 'prefecture' | 'region' | 'municipality';
   rawType: 'warning' | 'earthquake' | 'typhoon' | 'test' | 'custom';
   rawData?: any;
   /** 下部ティッカー左端のクロスディゾルブ表示用バッジ候補 */

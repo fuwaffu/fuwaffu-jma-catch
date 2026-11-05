@@ -95,6 +95,14 @@ function cleanWarningLabel(rawName: string): string {
   return rawName.replace(/^レベル[１-５1-5]\s*/, '').trim() || rawName;
 }
 
+export function formatRegionName(name: string): string {
+  if (!name) return '';
+  if (name.endsWith('地方') || name.endsWith('地域')) {
+    return name;
+  }
+  return `${name}地方`;
+}
+
 export function buildTelopQueue(
   warnings: any[],
   earthquakes: any[],
@@ -222,11 +230,18 @@ export function buildTelopQueue(
 
     const primaryBadge = inlineBadges[0];
     const namesText = inlineBadges.map(b => b.label).join('・');
-    const subAreaName =
+    const rawSubArea =
       areaLevel !== 'prefecture' && group.area && group.area !== group.prefecture ? group.area : '';
-    const headlineText = subAreaName
-      ? `${group.prefecture}・${subAreaName} ${namesText}`
-      : `${group.prefecture} ${namesText}`;
+    let formattedSubArea = '';
+    let areaDisplayText = group.prefecture;
+    if (areaLevel === 'region' && rawSubArea) {
+      formattedSubArea = formatRegionName(rawSubArea);
+      areaDisplayText = `${group.prefecture}　${formattedSubArea}`;
+    } else if (areaLevel === 'municipality' && rawSubArea) {
+      formattedSubArea = rawSubArea;
+      areaDisplayText = `${group.prefecture}・${rawSubArea}`;
+    }
+    const headlineText = `${areaDisplayText} ${namesText}`;
 
     // 下部ティッカー左端クロスディゾルブ用バッジ（警報情報の場合は「警報・注意報」を原則黒の指定色で表示）
     const tickerBadges: TickerBadgeInfo[] = [
@@ -252,7 +267,8 @@ export function buildTelopQueue(
       office: group.office || '気象庁発表',
       areaName: group.area,
       prefectureName: group.prefecture,
-      subAreaName,
+      subAreaName: formattedSubArea,
+      areaLevel,
       rawType: 'warning',
       rawData: group,
       tickerBadges,
@@ -426,10 +442,24 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
   const hbBg = config.areaColors.headerBadge.bgColor;
   const hbText = config.areaColors.headerBadge.textColor;
   const areaLevel = config.info.warningAreaLevel || 'prefecture';
-  const testSubArea =
+  const rawTestSubArea =
     areaLevel === 'municipality' ? '千代田区' : areaLevel === 'region' ? '東京地方' : '';
-  const testSpecialSubArea =
+  const testSubArea =
+    areaLevel === 'region' && rawTestSubArea
+      ? formatRegionName(rawTestSubArea)
+      : rawTestSubArea;
+  const rawTestSpecialSubArea =
     areaLevel === 'municipality' ? '八丈町' : areaLevel === 'region' ? '伊豆諸島南部' : '';
+  const testSpecialSubArea =
+    areaLevel === 'region' && rawTestSpecialSubArea
+      ? formatRegionName(rawTestSpecialSubArea)
+      : rawTestSpecialSubArea;
+  const testSpecialAreaDisplay = testSpecialSubArea
+    ? (areaLevel === 'region' ? `東京都　${testSpecialSubArea}` : `東京都・${testSpecialSubArea}`)
+    : '東京都';
+  const testWarningAreaDisplay = testSubArea
+    ? (areaLevel === 'region' ? `東京都　${testSubArea}` : `東京都・${testSubArea}`)
+    : '東京都';
   switch (presetKey) {
     case 'special_warning':
       return [
@@ -438,9 +468,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           category: 'special_warning',
           categoryLabel: '警報・注意報',
           sidebarTitle: '特別警報',
-          headlineText: testSpecialSubArea
-            ? `東京都・${testSpecialSubArea} 大雨特別警報・暴風特別警報`
-            : '東京都 大雨特別警報・暴風特別警報',
+          headlineText: `${testSpecialAreaDisplay} 大雨特別警報・暴風特別警報`,
           badgeText: '',
           bgColor: config.colors.warningLevels.special.bg,
           textColor: config.colors.warningLevels.special.text,
@@ -450,6 +478,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           areaName: testSpecialSubArea || '東京都',
           prefectureName: '東京都',
           subAreaName: testSpecialSubArea,
+          areaLevel,
           rawType: 'warning',
           tickerBadges: [
             {
@@ -479,9 +508,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           category: 'warning',
           categoryLabel: '警報・注意報',
           sidebarTitle: '気象警報',
-          headlineText: testSubArea
-            ? `東京都・${testSubArea} 大雨警報・洪水警報・雷注意報`
-            : '東京都 大雨警報・洪水警報・雷注意報',
+          headlineText: `${testWarningAreaDisplay} 大雨警報・洪水警報・雷注意報`,
           badgeText: '',
           bgColor: config.colors.warningLevels.warning.bg,
           textColor: config.colors.warningLevels.warning.text,
@@ -491,6 +518,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           areaName: testSubArea || '東京都',
           prefectureName: '東京都',
           subAreaName: testSubArea,
+          areaLevel,
           rawType: 'warning',
           tickerBadges: [
             {

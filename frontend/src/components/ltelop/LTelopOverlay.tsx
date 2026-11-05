@@ -3,6 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { drawTyphoon } from '../../utils/drawTyphoon';
 import { formatIntensity } from '../../EarthquakeDetailView';
+import { formatRegionName } from '../../utils/lTelopEngine';
 import type { LTelopConfig, TelopItem, TickerBadgeInfo } from '../../types/lTelopTypes';
 
 export type LayoutBoxKey =
@@ -859,6 +860,17 @@ export default function LTelopOverlay({
                   const prefText = item.prefectureName || item.areaName;
                   const subArea =
                     item.subAreaName && item.subAreaName !== prefText ? item.subAreaName : '';
+                  let areaDisplayText = prefText;
+                  if (subArea) {
+                    const isRegion =
+                      item.areaLevel === 'region' || config.info.warningAreaLevel === 'region';
+                    if (isRegion) {
+                      const formattedRegion = formatRegionName(subArea);
+                      areaDisplayText = `${prefText}　${formattedRegion}`;
+                    } else {
+                      areaDisplayText = `${prefText}・${subArea}`;
+                    }
+                  }
                   return (
                     <span
                       key={item.id}
@@ -871,7 +883,7 @@ export default function LTelopOverlay({
                       {item.inlineBadges && item.inlineBadges.length > 0 ? (
                         <>
                           <span style={{ fontWeight: 900 }}>
-                            {subArea ? `${prefText}・${subArea}` : prefText}
+                            {areaDisplayText}
                           </span>
                           {item.inlineBadges.map((wb, wbIdx) => (
                             <span
