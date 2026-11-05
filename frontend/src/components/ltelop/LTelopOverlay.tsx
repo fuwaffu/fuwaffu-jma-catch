@@ -4,7 +4,12 @@ import 'leaflet/dist/leaflet.css';
 import { drawTyphoon } from '../../utils/drawTyphoon';
 import { formatIntensity } from '../../EarthquakeDetailView';
 import { formatRegionName } from '../../utils/lTelopEngine';
-import type { LTelopConfig, TelopItem, TickerBadgeInfo } from '../../types/lTelopTypes';
+import {
+  type LTelopConfig,
+  type TelopItem,
+  type TickerBadgeInfo,
+  getPrefectureCode,
+} from '../../types/lTelopTypes';
 
 export type LayoutBoxKey =
   | 'sidebar'
@@ -278,10 +283,38 @@ export default function LTelopOverlay({
         map.set(heading, [item]);
       }
     }
-    return Array.from(map.entries()).map(([headingLabel, groupItems]) => ({
-      headingLabel,
-      items: groupItems,
-    }));
+    return Array.from(map.entries()).map(([headingLabel, groupItems]) => {
+      // 警報・注意報などの都道府県情報を持つアイテムは都道府県コード順（01 北海道 〜 47 沖縄県）に安定整列
+      const sortedItems = [...groupItems].sort((a, b) => {
+        const isWarnA =
+          a.rawType === 'warning' ||
+          a.category === 'special_warning' ||
+          a.category === 'warning' ||
+          a.category === 'advisory';
+        const isWarnB =
+          b.rawType === 'warning' ||
+          b.category === 'special_warning' ||
+          b.category === 'warning' ||
+          b.category === 'advisory';
+
+        if (isWarnA && isWarnB) {
+          const codeA = getPrefectureCode(a.prefectureName || a.areaName);
+          const codeB = getPrefectureCode(b.prefectureName || b.areaName);
+          if (codeA !== codeB) return codeA - codeB;
+
+          const areaA = a.subAreaName || a.areaName || '';
+          const areaB = b.subAreaName || b.areaName || '';
+          if (areaA !== areaB) return areaA.localeCompare(areaB, 'ja');
+        }
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+
+      return {
+        headingLabel,
+        items: sortedItems,
+      };
+    });
   }, [items]);
 
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);

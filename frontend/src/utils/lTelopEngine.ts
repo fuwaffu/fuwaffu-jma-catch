@@ -6,6 +6,7 @@ import {
   type TelopItem,
   type TickerBadgeInfo,
   REGION_PREFECTURES,
+  getPrefectureCode,
 } from '../types/lTelopTypes';
 
 const INTENSITY_RANK: Record<string, number> = {
@@ -430,9 +431,32 @@ export function buildTelopQueue(
     }
   }
 
-  // 優先度昇順（数値が小さいほど高優先）→ 発表日時降順でソート
+  // 優先度昇順（数値が小さいほど高優先）
+  // 警報・注意報などの都道府県情報を持つアイテムは都道府県コード昇順（01 北海道 〜 47 沖縄県）→ 地域名順 → 発表日時降順
   return items.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority;
+
+    const isWarnA =
+      a.rawType === 'warning' ||
+      a.category === 'special_warning' ||
+      a.category === 'warning' ||
+      a.category === 'advisory';
+    const isWarnB =
+      b.rawType === 'warning' ||
+      b.category === 'special_warning' ||
+      b.category === 'warning' ||
+      b.category === 'advisory';
+
+    if (isWarnA && isWarnB) {
+      const codeA = getPrefectureCode(a.prefectureName || a.areaName);
+      const codeB = getPrefectureCode(b.prefectureName || b.areaName);
+      if (codeA !== codeB) return codeA - codeB;
+
+      const areaA = a.subAreaName || a.areaName || '';
+      const areaB = b.subAreaName || b.areaName || '';
+      if (areaA !== areaB) return areaA.localeCompare(areaB, 'ja');
+    }
+
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 }
