@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import { drawTyphoon } from './utils/drawTyphoon';
 import {
@@ -10,20 +10,26 @@ import {
   type StationItem,
 } from './EarthquakeDetailView';
 import { deduplicateEarthquakes } from './utils/earthquakeUtils';
+import LTelopOverlay from './components/ltelop/LTelopOverlay';
+import { loadLTelopConfig, LTELOP_STORAGE_KEY, type LTelopConfig } from './types/lTelopTypes';
+import { buildTelopQueue } from './utils/lTelopEngine';
 import 'leaflet/dist/leaflet.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://jma-dashboard-backend.fuwaffu.workers.dev';
 
 export default function ObsApp() {
   const urlParams = new URLSearchParams(window.location.search);
-  const obsType = urlParams.get('type') === 'earthquake' ? 'earthquake' : 'typhoon';
+  const rawType = urlParams.get('type');
+  const obsType = rawType === 'ltelop' ? 'ltelop' : rawType === 'earthquake' ? 'earthquake' : 'typhoon';
   const idParam = urlParams.get('id');
   const timeParam = urlParams.get('time');
 
   useEffect(() => {
     document.body.style.backgroundColor = 'transparent';
+    document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.backgroundColor = '';
+      document.body.style.overflow = '';
     };
   }, []);
 
@@ -46,10 +52,80 @@ export default function ObsApp() {
     return () => clearInterval(intervalId);
   }, []);
 
+  if (obsType === 'ltelop') {
+    return <ObsLTelopView />;
+  }
   if (obsType === 'earthquake') {
     return <ObsEarthquakeView idParam={idParam} timeParam={timeParam} />;
   }
   return <ObsTyphoonView typhoonIdParam={idParam} />;
+}
+
+function ObsLTelopView() {
+  const [config, setConfig] = useState<LTelopConfig>(() => loadLTelopConfig());
+  const [warnings, setWarnings] = useState<any[]>([]);
+  const [earthquakes, setEarthquakes] = useState<any[]>([]);
+  const [typhoons, setTyphoons] = useState<any[]>([]);
+
+  // R5.5: localStorageを500ms間隔で監視し、設定変更をリアルタイム反映
+  useEffect(() => {
+    let lastRaw = localStorage.getItem(LTELOP_STORAGE_KEY);
+    const syncTimer = setInterval(() => {
+      try {
+        const currentRaw = localStorage.getItem(LTELOP_STORAGE_KEY);
+        if (currentRaw && currentRaw !== lastRaw) {
+          lastRaw = currentRaw;
+          setConfig(loadLTelopConfig());
+        }
+      } catch {}
+    }, 500);
+    return () => clearInterval(syncTimer);
+  }, []);
+
+  // データベースから最新データを取得（5分間隔 + forceFetchData対応）
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const [wRes, eqRes, tyRes] = await Promise.all([
+          fetch(`${API_BASE}/api/warnings`),
+          fetch(`${API_BASE}/api/earthquakes`),
+          fetch(`${API_BASE}/api/typhoons`),
+        ]);
+        if (wRes.ok) setWarnings(await wRes.json());
+        if (eqRes.ok) setEarthquakes(await eqRes.json());
+        if (tyRes.ok) {
+          const rawTy = await tyRes.json();
+          const now = Date.now();
+          const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+          setTyphoons(
+            Array.isArray(rawTy)
+              ? rawTy.filter((t: any) => {
+                  const ts = new Date(t.updatedAt || t.current?.dateTime || 0).getTime();
+                  return !ts || now - ts < THREE_DAYS_MS;
+                })
+              : []
+          );
+        }
+      } catch (e) {
+        console.error('[ObsLTelopView] Failed to fetch DB data:', e);
+      }
+    };
+
+    fetchAll();
+    const interval = setInterval(fetchAll, 300000);
+    window.addEventListener('forceFetchData', fetchAll);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('forceFetchData', fetchAll);
+    };
+  }, []);
+
+  const items = useMemo(
+    () => buildTelopQueue(warnings, earthquakes, typhoons, config),
+    [warnings, earthquakes, typhoons, config]
+  );
+
+  return <LTelopOverlay config={config} items={items} isObs={true} />;
 }
 
 function ObsEarthquakeView({ idParam, timeParam }: { idParam: string | null; timeParam: string | null }) {

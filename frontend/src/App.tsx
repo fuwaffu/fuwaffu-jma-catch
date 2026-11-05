@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import EarthquakeDetailView, { formatIntensity, getSeismicIntensityColor } from './EarthquakeDetailView';
+import LTelopAdminTool from './components/ltelop/LTelopAdminTool';
 import { drawTyphoon } from './utils/drawTyphoon';
 import { getRegionFromHypocenter, getRegionOrder, deduplicateEarthquakes, REGIONS } from './utils/earthquakeUtils';
 
@@ -19,7 +20,7 @@ const LINK_STYLE: React.CSSProperties = {
 };
 
 interface HistoryState {
-  tab: 'warnings' | 'earthquakes' | 'typhoons';
+  tab: 'warnings' | 'earthquakes' | 'typhoons' | 'ltelop';
   viewMode?: 'prefecture' | 'region' | 'municipality';
   selectedParentArea?: string | null;
   quakeId?: string | null;
@@ -28,7 +29,7 @@ interface HistoryState {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'warnings' | 'earthquakes' | 'typhoons'>('warnings');
+  const [activeTab, setActiveTab] = useState<'warnings' | 'earthquakes' | 'typhoons' | 'ltelop'>('warnings');
   const [warnings, setWarnings] = useState<any[]>([]);
   const [earthquakes, setEarthquakes] = useState<any[]>([]);
   const [typhoons, setTyphoons] = useState<any[]>([]);
@@ -316,7 +317,32 @@ export default function App() {
               )}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                const nextTab = activeTab === 'ltelop' ? 'warnings' : 'ltelop';
+                setActiveTab(nextTab);
+                pushNavState({ tab: nextTab });
+              }}
+              style={{
+                padding: '8px 16px',
+                background: activeTab === 'ltelop' ? '#0f172a' : 'linear-gradient(135deg, #dc2626, #991b1b)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)',
+              }}
+              title="OBSなどの配信ソフトで表示するL字テロップを生成・設定します"
+            >
+              <i className={`fa-solid ${activeTab === 'ltelop' ? 'fa-table-list' : 'fa-tv'}`}></i>
+              {activeTab === 'ltelop' ? 'データベース一覧へ戻る' : 'OBS L字テロップ生成'}
+            </button>
             <button 
               onClick={() => setUse24HourFormat(!use24HourFormat)}
               style={{ padding: '8px 16px', backgroundColor: '#fff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '6px', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}
@@ -334,6 +360,20 @@ export default function App() {
           </div>
         </header>
 
+        {activeTab === 'ltelop' ? (
+          <LTelopAdminTool
+            warnings={warnings}
+            earthquakes={earthquakes}
+            typhoons={typhoons}
+            lastUpdated={lastUpdated}
+            loading={loading}
+            onRefresh={() => fetchData(true)}
+            onBackToDb={() => {
+              setActiveTab('warnings');
+              pushNavState({ tab: 'warnings' });
+            }}
+          />
+        ) : (
         <main style={{ background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           
           {/* タブ */}
@@ -764,6 +804,7 @@ export default function App() {
             </div>
           </div>
         </main>
+        )}
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

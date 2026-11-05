@@ -1,0 +1,829 @@
+import React, { useEffect, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { drawTyphoon } from '../../utils/drawTyphoon';
+import { formatIntensity } from '../../EarthquakeDetailView';
+import type { LTelopConfig, TelopItem } from '../../types/lTelopTypes';
+
+export type LayoutBoxKey =
+  | 'sidebar'
+  | 'ticker'
+  | 'typhoonMap'
+  | 'earthquakePanel'
+  | 'clock'
+  | 'attribution';
+
+interface LTelopOverlayProps {
+  config: LTelopConfig;
+  items: TelopItem[];
+  isObs?: boolean;
+  scale?: number;
+  backgroundMode?: 'transparent' | 'checker' | 'sample_stream' | 'dark_grid';
+  editableLayout?: boolean;
+  selectedBox?: LayoutBoxKey | null;
+  onSelectBox?: (key: LayoutBoxKey) => void;
+  onUpdateBox?: (key: LayoutBoxKey, patch: { x?: number; y?: number; width?: number; height?: number }) => void;
+  snapGrid?: boolean;
+  showSafeArea?: boolean;
+}
+
+const BOX_LABELS: Record<LayoutBoxKey, string> = {
+  sidebar: '左サイドバー',
+  ticker: '下部ティッカー',
+  typhoonMap: '台風MAP',
+  earthquakePanel: '地震情報パネル',
+  clock: '時計表示',
+  attribution: '出典表示',
+};
+
+export default function LTelopOverlay({
+  config,
+  items,
+  isObs = false,
+  scale = 1,
+  backgroundMode = 'transparent',
+  editableLayout = false,
+  selectedBox = null,
+  onSelectBox,
+  onUpdateBox,
+  snapGrid = true,
+  showSafeArea = false,
+}: LTelopOverlayProps) {
+  const topItem = items[0] || null;
+  const activeTyphoonItem = items.find(i => i.rawType === 'typhoon' && i.rawData);
+  const activeEarthquakeItem = items.find(i => i.rawType === 'earthquake' && i.rawData);
+
+  // 時計ステート
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ティッカー60fps requestAnimationFrame スクロール
+  const tickerContainerRef = useRef<HTMLDivElement>(null);
+  const tickerTrackRef = useRef<HTMLDivElement>(null);
+  const offsetRef = useRef<number>(0);
+
+  const tickerTextSignature = items.map(i => `${i.id}:${i.headlineText}`).join('||');
+
+  useEffect(() => {
+    let animId: number;
+    let lastTime = performance.now();
+
+    const containerEl = tickerContainerRef.current;
+    const trackEl = tickerTrackRef.current;
+    if (!containerEl || !trackEl) return;
+
+    const containerWidth = containerEl.clientWidth || 1600;
+    const dir = config.layout.ticker.scrollDirection;
+    offsetRef.current = dir === 'rtl' ? containerWidth : -trackEl.scrollWidth;
+
+    const step = (time: number) => {
+      const dt = Math.min((time - lastTime) / 1000, 0.1);
+      lastTime = time;
+      const speed = Math.max(20, config.layout.ticker.scrollSpeed || 80);
+      const trackWidth = trackEl.scrollWidth || 800;
+      const cw = containerEl.clientWidth || 1600;
+
+      if (dir === 'rtl') {
+        offsetRef.current -= speed * dt;
+        if (offsetRef.current < -trackWidth) {
+          offsetRef.current = cw;
+        }
+      } else {
+        offsetRef.current += speed * dt;
+        if (offsetRef.current > cw) {
+          offsetRef.current = -trackWidth;
+        }
+      }
+
+      trackEl.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
+      animId = requestAnimationFrame(step);
+    };
+
+    animId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animId);
+  }, [tickerTextSignature, config.layout.ticker.scrollSpeed, config.layout.ticker.scrollDirection]);
+
+  // 台風ミニマップ描画 (Leaflet)
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+
+  const shouldShowTyphoonMap =
+    config.layout.typhoonMap.visible &&
+    (editableLayout ||
+      config.layout.typhoonMap.displayMode === 'always' ||
+      (config.layout.typhoonMap.displayMode === 'auto' && Boolean(activeTyphoonItem)));
+
+  useEffect(() => {
+    if (!shouldShowTyphoonMap || !mapContainerRef.current) {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+      return;
+    }
+
+    if (!mapInstanceRef.current) {
+      const map = L.map(mapContainerRef.current, {
+        zoomControl: false,
+        dragging: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        attributionControl: false,
+      }).setView([31.5, 136.0], 5);
+      mapInstanceRef.current = map;
+    }
+
+    const map = mapInstanceRef.current;
+    map.invalidateSize();
+
+    map.eachLayer(layer => {
+      map.removeLayer(layer);
+    });
+
+    const tileUrl =
+      config.layout.typhoonMap.tileType === 'gsi'
+        ? 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'
+        : config.layout.typhoonMap.tileType === 'carto'
+        ? 'https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+    L.tileLayer(tileUrl, { maxZoom: 12 }).addTo(map);
+
+    if (activeTyphoonItem?.rawData) {
+      const ty = activeTyphoonItem.rawData;
+      const trackPoints = drawTyphoon(map, ty, { isObs: true, use24HourFormat: true });
+      if (trackPoints.length > 1) {
+        map.fitBounds(L.latLngBounds(trackPoints).pad(0.25), { maxZoom: 6 });
+      } else if (ty.current?.lat && ty.current?.lon) {
+        map.setView([ty.current.lat, ty.current.lon], 5);
+      }
+    } else {
+      map.setView([33.0, 136.0], 4);
+    }
+  }, [
+    shouldShowTyphoonMap,
+    activeTyphoonItem,
+    config.layout.typhoonMap.tileType,
+    config.layout.typhoonMap.width,
+    config.layout.typhoonMap.height,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // D&D 移動・リサイズハンドラ（レイアウトエディタ用）
+  const dragStateRef = useRef<{
+    key: LayoutBoxKey;
+    mode: 'move' | 'resize';
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    origW: number;
+    origH: number;
+  } | null>(null);
+
+  const handlePointerDown = (
+    e: React.PointerEvent,
+    key: LayoutBoxKey,
+    mode: 'move' | 'resize'
+  ) => {
+    if (!editableLayout || !onUpdateBox) return;
+    e.stopPropagation();
+    e.preventDefault();
+    onSelectBox?.(key);
+    const box = config.layout[key];
+    if (box.locked) return;
+
+    dragStateRef.current = {
+      key,
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: box.x,
+      origY: box.y,
+      origW: box.width,
+      origH: box.height,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const st = dragStateRef.current;
+    if (!st || !editableLayout || !onUpdateBox) return;
+    const dx = (e.clientX - st.startX) / (scale || 1);
+    const dy = (e.clientY - st.startY) / (scale || 1);
+    const snap = (v: number) => (snapGrid ? Math.round(v / 10) * 10 : Math.round(v));
+
+    if (st.mode === 'move') {
+      const nextX = Math.max(0, Math.min(1920 - st.origW, snap(st.origX + dx)));
+      const nextY = Math.max(0, Math.min(1080 - st.origH, snap(st.origY + dy)));
+      onUpdateBox(st.key, { x: nextX, y: nextY });
+    } else {
+      const nextW = Math.max(60, Math.min(1920 - st.origX, snap(st.origW + dx)));
+      const nextH = Math.max(36, Math.min(1080 - st.origY, snap(st.origH + dy)));
+      onUpdateBox(st.key, { width: nextW, height: nextH });
+    }
+  };
+
+  const handlePointerUp = () => {
+    dragStateRef.current = null;
+  };
+
+  const renderEditableFrame = (key: LayoutBoxKey, children: React.ReactNode) => {
+    const box = config.layout[key];
+    if (!box.visible && !editableLayout) return null;
+
+    const isSelected = editableLayout && selectedBox === key;
+
+    return (
+      <div
+        key={key}
+        onPointerDown={e => handlePointerDown(e, key, 'move')}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        style={{
+          position: 'absolute',
+          left: `${box.x}px`,
+          top: `${box.y}px`,
+          width: `${box.width}px`,
+          height: `${box.height}px`,
+          opacity: box.visible ? 1 : 0.35,
+          cursor: editableLayout ? (box.locked ? 'not-allowed' : 'move') : 'default',
+          outline: editableLayout
+            ? isSelected
+              ? '3px solid #38bdf8'
+              : '1.5px dashed rgba(255,255,255,0.55)'
+            : 'none',
+          zIndex: isSelected ? 50 : key === 'ticker' || key === 'sidebar' ? 20 : 30,
+          boxSizing: 'border-box',
+          userSelect: 'none',
+        }}
+      >
+        {children}
+        {editableLayout && (
+          <>
+            <div
+              style={{
+                position: 'absolute',
+                top: '-24px',
+                left: 0,
+                background: isSelected ? '#0284c7' : 'rgba(15,23,42,0.85)',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '4px 4px 0 0',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+              }}
+            >
+              {BOX_LABELS[key]} ({box.x}, {box.y} / {box.width}×{box.height})
+              {!box.visible ? ' [非表示]' : ''}
+            </div>
+            {!box.locked && (
+              <div
+                onPointerDown={e => handlePointerDown(e, key, 'resize')}
+                style={{
+                  position: 'absolute',
+                  right: '-6px',
+                  bottom: '-6px',
+                  width: '18px',
+                  height: '18px',
+                  backgroundColor: '#38bdf8',
+                  border: '2px solid #ffffff',
+                  borderRadius: '4px',
+                  cursor: 'nwse-resize',
+                  zIndex: 60,
+                }}
+                title="ドラッグしてサイズ変更"
+              />
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // 背景スタイル（プレビュー用 / OBS時は完全透過）
+  const getCanvasBackground = (): React.CSSProperties => {
+    if (isObs || backgroundMode === 'transparent') {
+      return { backgroundColor: 'transparent' };
+    }
+    if (backgroundMode === 'checker') {
+      return {
+        backgroundImage:
+          'linear-gradient(45deg, #cbd5e1 25%, transparent 25%), linear-gradient(-45deg, #cbd5e1 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #cbd5e1 75%), linear-gradient(-45deg, transparent 75%, #cbd5e1 75%)',
+        backgroundSize: '32px 32px',
+        backgroundPosition: '0 0, 0 16px, 16px -16px, -16px 0',
+        backgroundColor: '#f8fafc',
+      };
+    }
+    if (backgroundMode === 'sample_stream') {
+      return {
+        background: 'radial-gradient(circle at 60% 40%, #1e3a8a 0%, #0f172a 65%, #020617 100%)',
+      };
+    }
+    return {
+      backgroundColor: '#0f172a',
+      backgroundImage:
+        'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)',
+      backgroundSize: '40px 40px',
+    };
+  };
+
+  const sbColor = config.areaColors.sidebar;
+  const tkColor = config.areaColors.ticker;
+  const hbColor = config.areaColors.headerBadge;
+  const sidebarTitleText = topItem ? topItem.sidebarTitle : '気象情報';
+
+  return (
+    <div
+      style={{
+        width: '1920px',
+        height: '1080px',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: config.advanced.fontFamily,
+        pointerEvents: isObs ? 'none' : 'auto',
+        transform: scale !== 1 ? `scale(${scale})` : undefined,
+        transformOrigin: 'top left',
+        border:
+          config.areaColors.frameBorder.width > 0
+            ? `${config.areaColors.frameBorder.width}px solid ${config.areaColors.frameBorder.color}`
+            : undefined,
+        boxSizing: 'border-box',
+        ...getCanvasBackground(),
+      }}
+    >
+      {/* サンプル配信映像プレースホルダー表示 */}
+      {!isObs && backgroundMode === 'sample_stream' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(255,255,255,0.18)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        >
+          <i className="fa-solid fa-video" style={{ fontSize: '96px', marginBottom: '20px' }}></i>
+          <div style={{ fontSize: '36px', fontWeight: 700, letterSpacing: '4px' }}>
+            OBS 配信映像エリア (1920 × 1080)
+          </div>
+          <div style={{ fontSize: '20px', marginTop: '8px' }}>
+            本番のOBSブラウザソースではこの背景が完全透過されます
+          </div>
+        </div>
+      )}
+
+      {/* 放送セーフエリア & 中心線ガイド */}
+      {editableLayout && showSafeArea && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              left: '5%',
+              top: '5%',
+              width: '90%',
+              height: '90%',
+              border: '2px dashed rgba(250, 204, 21, 0.55)',
+              pointerEvents: 'none',
+              zIndex: 45,
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              borderLeft: '1px dashed rgba(56, 189, 248, 0.4)',
+              pointerEvents: 'none',
+              zIndex: 45,
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: 0,
+              right: 0,
+              borderTop: '1px dashed rgba(56, 189, 248, 0.4)',
+              pointerEvents: 'none',
+              zIndex: 45,
+            }}
+          />
+        </>
+      )}
+
+      {/* 1. 左サイドバー */}
+      {renderEditableFrame(
+        'sidebar',
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: sbColor.useGradient
+              ? `linear-gradient(${sbColor.gradientDeg}deg, ${sbColor.bgStart}, ${sbColor.bgEnd})`
+              : sbColor.bgStart,
+            color: sbColor.textColor,
+            opacity: sbColor.opacity,
+            borderRight:
+              sbColor.borderRightWidth > 0
+                ? `${sbColor.borderRightWidth}px solid ${sbColor.borderRightColor}`
+                : 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 8px',
+            boxSizing: 'border-box',
+            boxShadow: '4px 0 20px rgba(0,0,0,0.45)',
+          }}
+        >
+          {/* サイドバー上部ヘッダ */}
+          <div
+            style={{
+              backgroundColor: topItem ? topItem.bgColor : hbColor.bgColor,
+              color: topItem ? topItem.textColor : hbColor.textColor,
+              borderRadius: `${hbColor.borderRadius}px`,
+              padding: '8px 6px',
+              width: '100%',
+              textAlign: 'center',
+              fontWeight: 900,
+              fontSize: '15px',
+              letterSpacing: '1px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
+              boxSizing: 'border-box',
+            }}
+          >
+            {topItem ? topItem.categoryLabel : '防災情報'}
+          </div>
+
+          {/* メイン縦書き/横書きカテゴリタイトル */}
+          <div
+            style={{
+              writingMode:
+                config.layout.sidebar.direction === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+              textOrientation: 'upright',
+              fontSize: `${config.layout.sidebar.fontSize}px`,
+              fontWeight: 900,
+              letterSpacing: `${config.layout.sidebar.letterSpacing}px`,
+              lineHeight: 1.15,
+              textShadow: '0 3px 8px rgba(0,0,0,0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              margin: '12px 0',
+            }}
+          >
+            {sidebarTitleText}
+          </div>
+
+          {/* サイドバー下部：上位バッジ一覧 */}
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              alignItems: 'center',
+            }}
+          >
+            {items.slice(0, 3).map(item => (
+              <div
+                key={item.id}
+                style={{
+                  width: '100%',
+                  backgroundColor: item.bgColor,
+                  color: item.textColor,
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  padding: '5px 4px',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  boxSizing: 'border-box',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                }}
+              >
+                {item.badgeText || item.areaName || item.categoryLabel}
+              </div>
+            ))}
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: 'rgba(255,255,255,0.85)',
+                marginTop: '4px',
+                textAlign: 'center',
+              }}
+            >
+              気象庁発表
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. 下部スクロールティッカー */}
+      {renderEditableFrame(
+        'ticker',
+        <div
+          ref={tickerContainerRef}
+          style={{
+            width: '100%',
+            height: '100%',
+            background: tkColor.useGradient
+              ? `linear-gradient(to bottom, ${tkColor.bgStart}, ${tkColor.bgEnd})`
+              : tkColor.bgStart,
+            color: tkColor.textColor,
+            opacity: tkColor.opacity,
+            borderTop:
+              tkColor.borderTopWidth > 0
+                ? `${tkColor.borderTopWidth}px solid ${tkColor.borderTopColor}`
+                : 'none',
+            display: 'flex',
+            alignItems: 'center',
+            overflow: 'hidden',
+            position: 'relative',
+            boxSizing: 'border-box',
+            boxShadow: '0 -4px 20px rgba(0,0,0,0.5)',
+          }}
+        >
+          {/* 左端カテゴリ固定ラベル */}
+          <div
+            style={{
+              zIndex: 5,
+              height: '100%',
+              padding: '0 22px',
+              backgroundColor: topItem ? topItem.bgColor : hbColor.bgColor,
+              color: topItem ? topItem.textColor : hbColor.textColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 900,
+              fontSize: `${Math.max(18, Math.round(config.layout.ticker.fontSize * 0.82))}px`,
+              whiteSpace: 'nowrap',
+              boxShadow: '4px 0 12px rgba(0,0,0,0.4)',
+              flexShrink: 0,
+            }}
+          >
+            {topItem ? topItem.categoryLabel : '気象庁 防災情報'}
+          </div>
+
+          {/* スクロールトラック */}
+          <div
+            style={{
+              flex: 1,
+              height: '100%',
+              overflow: 'hidden',
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <div
+              ref={tickerTrackRef}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '64px',
+                whiteSpace: 'nowrap',
+                willChange: 'transform',
+                fontSize: `${config.layout.ticker.fontSize}px`,
+                fontWeight: 700,
+                paddingLeft: '24px',
+              }}
+            >
+              {items.length > 0 ? (
+                items.map(item => (
+                  <span
+                    key={item.id}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        backgroundColor: item.bgColor,
+                        color: item.textColor,
+                        padding: '3px 12px',
+                        borderRadius: '6px',
+                        fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
+                        fontWeight: 900,
+                      }}
+                    >
+                      {item.badgeText || item.categoryLabel}
+                    </span>
+                    <span>{item.headlineText}</span>
+                  </span>
+                ))
+              ) : (
+                <span>
+                  現在、表示対象の特別警報・警報・地震・台風情報はありません（気象庁発表）
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. 台風ミニMAP */}
+      {shouldShowTyphoonMap &&
+        renderEditableFrame(
+          'typhoonMap',
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '2px solid rgba(255,255,255,0.25)',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.55)',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                padding: '6px 14px',
+                background: 'linear-gradient(90deg, #0284c7, #1e3a8a)',
+                color: '#fff',
+                fontWeight: 800,
+                fontSize: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                zIndex: 10,
+              }}
+            >
+              <span>
+                🌀{' '}
+                {activeTyphoonItem
+                  ? `${activeTyphoonItem.categoryLabel} 進路予想図`
+                  : '台風進路マップ（待機中）'}
+              </span>
+              <span style={{ fontSize: '12px', opacity: 0.9 }}>気象庁発表</span>
+            </div>
+            <div ref={mapContainerRef} style={{ flex: 1, width: '100%', minHeight: 0 }} />
+          </div>
+        )}
+
+      {/* 4. 地震情報パネル */}
+      {(editableLayout || (config.layout.earthquakePanel.visible && activeEarthquakeItem)) &&
+        renderEditableFrame(
+          'earthquakePanel',
+          (() => {
+            const eq = activeEarthquakeItem?.rawData;
+            const maxInt = eq ? formatIntensity(eq.maxIntensity) : '—';
+            const intColor = config.colors.seismic[maxInt] || { bg: '#2563eb', text: '#fff' };
+            return (
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  background: 'rgba(15, 23, 42, 0.9)',
+                  borderLeft: `8px solid ${intColor.bg}`,
+                  borderRadius: '0 12px 12px 0',
+                  padding: '14px 20px',
+                  color: '#fff',
+                  boxShadow: '0 10px 28px rgba(0,0,0,0.55)',
+                  backdropFilter: 'blur(10px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '18px', fontWeight: 800, color: '#93c5fd' }}>
+                    震源・震度情報
+                  </span>
+                  <span
+                    style={{
+                      backgroundColor: intColor.bg,
+                      color: intColor.text,
+                      padding: '4px 12px',
+                      borderRadius: '6px',
+                      fontSize: '20px',
+                      fontWeight: 900,
+                    }}
+                  >
+                    最大震度 {maxInt}
+                  </span>
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 900, lineHeight: 1.2 }}>
+                  {eq?.hypocenterName || '地震情報パネル（自動表示）'}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '17px',
+                    color: '#cbd5e1',
+                    borderTop: '1px solid rgba(255,255,255,0.12)',
+                    paddingTop: '8px',
+                  }}
+                >
+                  <span>
+                    規模: <strong style={{ color: '#38bdf8' }}>{eq?.magnitude ? `M${eq.magnitude}` : '—'}</strong>
+                    {' / '}
+                    深さ:{' '}
+                    <strong style={{ color: '#fbbf24' }}>
+                      {eq?.depth != null ? (eq.depth === 0 ? 'ごく浅い' : `約${eq.depth}km`) : '—'}
+                    </strong>
+                  </span>
+                  <span style={{ fontSize: '13px', opacity: 0.85 }}>気象庁発表</span>
+                </div>
+              </div>
+            );
+          })()
+        )}
+
+      {/* 5. 時計表示 */}
+      {renderEditableFrame(
+        'clock',
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: 'rgba(15, 23, 42, 0.82)',
+            color: '#ffffff',
+            borderRadius: '10px',
+            border: '1.5px solid rgba(255,255,255,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            padding: '0 14px',
+            boxSizing: 'border-box',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+          }}
+        >
+          <span style={{ fontSize: '15px', color: '#93c5fd', fontWeight: 700 }}>
+            {now.getMonth() + 1}/{now.getDate()}
+          </span>
+          <span style={{ fontSize: '26px', fontWeight: 900, letterSpacing: '1px', fontFamily: "'Lato', sans-serif" }}>
+            {String(now.getHours()).padStart(2, '0')}:{String(now.getMinutes()).padStart(2, '0')}
+            <span style={{ fontSize: '16px', opacity: 0.8, marginLeft: '2px' }}>
+              :{String(now.getSeconds()).padStart(2, '0')}
+            </span>
+          </span>
+        </div>
+      )}
+
+      {/* 6. 出典表示（R1: 気象庁発表の常時明示） */}
+      {renderEditableFrame(
+        'attribution',
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: 'rgba(15, 23, 42, 0.82)',
+            color: '#ffffff',
+            opacity: config.advanced.attributionOpacity,
+            borderRadius: '8px',
+            border: '1px solid rgba(255,255,255,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 14px',
+            boxSizing: 'border-box',
+            fontSize: `${config.advanced.attributionFontSize}px`,
+            fontWeight: 700,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+          }}
+        >
+          出典：{config.advanced.attributionText.includes('気象庁')
+            ? config.advanced.attributionText
+            : `${config.advanced.attributionText}（気象庁発表）`}
+        </div>
+      )}
+    </div>
+  );
+}
+
