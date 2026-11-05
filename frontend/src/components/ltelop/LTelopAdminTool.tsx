@@ -811,9 +811,45 @@ export default function LTelopAdminTool({
                   }}
                 >
                   <h3 style={{ margin: '0 0 10px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
-                    ⏱️ 地震・警報の表示期間フィルタ（最新 1時間 〜 72時間）
+                    ⏱️ 警報の表示単位 & 地震・警報の表示期間フィルタ（最新 1時間 〜 72時間）
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.82rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontWeight: 700, flexWrap: 'wrap', gap: '6px' }}>
+                        <span>📍 警報・注意報の地域表示単位:</span>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {[
+                            { id: 'prefecture', label: '都道府県ごと (【東京都】)' },
+                            { id: 'region', label: '地方ごと (【東京都】東京地方)' },
+                            { id: 'municipality', label: '市区町村ごと (【東京都】千代田区)' },
+                          ].map(opt => (
+                            <button
+                              key={opt.id}
+                              onClick={() =>
+                                setConfig(prev => ({
+                                  ...prev,
+                                  info: { ...prev.info, warningAreaLevel: opt.id as any },
+                                }))
+                              }
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                borderRadius: '4px',
+                                border: '1px solid',
+                                borderColor: config.info.warningAreaLevel === opt.id ? '#2563eb' : '#cbd5e1',
+                                backgroundColor: config.info.warningAreaLevel === opt.id ? '#eff6ff' : '#fff',
+                                color: config.info.warningAreaLevel === opt.id ? '#1d4ed8' : '#475569',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', fontWeight: 700 }}>
                         <span>⚠️ 気象警報・注意報の表示範囲:</span>
@@ -1266,8 +1302,26 @@ export default function LTelopAdminTool({
                   ))}
                 </div>
 
-                {/* 地震の最小震度・最大表示件数フィルタ */}
+                {/* 地震の最小震度・最大表示件数フィルタ & 警報の地域表示単位 */}
                 <div style={{ marginTop: '14px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#334155' }}>警報・注意報の地域表示単位:</span>
+                    <select
+                      value={config.info.warningAreaLevel}
+                      onChange={e =>
+                        setConfig(prev => ({
+                          ...prev,
+                          info: { ...prev.info, warningAreaLevel: e.target.value as any },
+                        }))
+                      }
+                      style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.84rem' }}
+                    >
+                      <option value="prefecture">都道府県ごと（例: 【東京都】 大雨警報）</option>
+                      <option value="region">都道府県内の地方ごと（例: 【東京都】東京地方 大雨警報）</option>
+                      <option value="municipality">市区町村ごと（例: 【東京都】千代田区 大雨警報）</option>
+                    </select>
+                  </div>
+
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#334155' }}>地震の表示対象（最小最大震度）:</span>
                     <select

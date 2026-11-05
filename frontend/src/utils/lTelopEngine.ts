@@ -116,11 +116,27 @@ export function buildTelopQueue(
     return true;
   });
 
-  const prefWarnings = validWarnings.filter(w => w.areaType === 'prefecture');
-  const sourceWarnings =
-    prefWarnings.length > 0
-      ? prefWarnings
-      : validWarnings.filter(w => w.areaType === 'region' || !w.areaType);
+  const areaLevel = config.info.warningAreaLevel || 'prefecture';
+  let sourceWarnings: any[] = [];
+  if (areaLevel === 'municipality') {
+    const muniWarnings = validWarnings.filter(w => w.areaType === 'municipality');
+    sourceWarnings =
+      muniWarnings.length > 0
+        ? muniWarnings
+        : validWarnings.filter(w => w.areaType === 'region' || w.areaType === 'subregion' || w.areaType === 'prefecture');
+  } else if (areaLevel === 'region') {
+    const regWarnings = validWarnings.filter(w => w.areaType === 'region' || w.areaType === 'subregion');
+    sourceWarnings =
+      regWarnings.length > 0
+        ? regWarnings
+        : validWarnings.filter(w => w.areaType === 'prefecture' || !w.areaType);
+  } else {
+    const prefWarnings = validWarnings.filter(w => w.areaType === 'prefecture');
+    sourceWarnings =
+      prefWarnings.length > 0
+        ? prefWarnings
+        : validWarnings.filter(w => w.areaType === 'region' || !w.areaType);
+  }
 
   const groupedByArea: Record<
     string,
@@ -139,9 +155,10 @@ export function buildTelopQueue(
     const pref = w.prefecture || areaKey;
     if (!isAreaAllowed(pref, getRegionForPrefecture(pref), config)) continue;
 
-    const existing = groupedByArea[areaKey];
+    const mapKey = `${pref}__${areaKey}`;
+    const existing = groupedByArea[mapKey];
     if (!existing || new Date(w.reportDateTime) > new Date(existing.reportDateTime)) {
-      groupedByArea[areaKey] = {
+      groupedByArea[mapKey] = {
         area: areaKey,
         prefecture: pref,
         reportDateTime: w.reportDateTime,
@@ -205,7 +222,11 @@ export function buildTelopQueue(
 
     const primaryBadge = inlineBadges[0];
     const namesText = inlineBadges.map(b => b.label).join('・');
-    const headlineText = `【${group.area}】${namesText}`;
+    const subAreaName =
+      areaLevel !== 'prefecture' && group.area && group.area !== group.prefecture ? group.area : '';
+    const headlineText = subAreaName
+      ? `【${group.prefecture}】${subAreaName} ${namesText}`
+      : `【${group.prefecture}】${namesText}`;
 
     // 下部ティッカー左端クロスディゾルブ用バッジ（警報情報の場合は「警報・注意報」を原則黒の指定色で表示）
     const tickerBadges: TickerBadgeInfo[] = [
@@ -217,7 +238,7 @@ export function buildTelopQueue(
     ];
 
     items.push({
-      id: `warn-${group.area}-${group.reportDateTime}`,
+      id: `warn-${group.prefecture}-${group.area}-${group.reportDateTime}`,
       category: topCategory,
       categoryLabel: '警報・注意報',
       sidebarTitle,
@@ -230,6 +251,8 @@ export function buildTelopQueue(
       timestamp: group.reportDateTime,
       office: group.office || '気象庁発表',
       areaName: group.area,
+      prefectureName: group.prefecture,
+      subAreaName,
       rawType: 'warning',
       rawData: group,
       tickerBadges,
@@ -402,6 +425,11 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
   const nowIso = new Date().toISOString();
   const hbBg = config.areaColors.headerBadge.bgColor;
   const hbText = config.areaColors.headerBadge.textColor;
+  const areaLevel = config.info.warningAreaLevel || 'prefecture';
+  const testSubArea =
+    areaLevel === 'municipality' ? '千代田区' : areaLevel === 'region' ? '東京地方' : '';
+  const testSpecialSubArea =
+    areaLevel === 'municipality' ? '八丈町' : areaLevel === 'region' ? '伊豆諸島南部' : '';
   switch (presetKey) {
     case 'special_warning':
       return [
@@ -410,14 +438,18 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           category: 'special_warning',
           categoryLabel: '警報・注意報',
           sidebarTitle: '特別警報',
-          headlineText: '【東京都・神奈川県】大雨特別警報・暴風特別警報',
+          headlineText: testSpecialSubArea
+            ? `【東京都】${testSpecialSubArea} 大雨特別警報・暴風特別警報`
+            : '【東京都】大雨特別警報・暴風特別警報',
           badgeText: '',
           bgColor: config.colors.warningLevels.special.bg,
           textColor: config.colors.warningLevels.special.text,
           priority: 1,
           timestamp: nowIso,
           office: '気象庁発表',
-          areaName: '東京都・神奈川県',
+          areaName: testSpecialSubArea || '東京都',
+          prefectureName: '東京都',
+          subAreaName: testSpecialSubArea,
           rawType: 'warning',
           tickerBadges: [
             {
@@ -447,14 +479,18 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           category: 'warning',
           categoryLabel: '警報・注意報',
           sidebarTitle: '気象警報',
-          headlineText: '【東京都】大雨警報・洪水警報・雷注意報',
+          headlineText: testSubArea
+            ? `【東京都】${testSubArea} 大雨警報・洪水警報・雷注意報`
+            : '【東京都】大雨警報・洪水警報・雷注意報',
           badgeText: '',
           bgColor: config.colors.warningLevels.warning.bg,
           textColor: config.colors.warningLevels.warning.text,
           priority: 4,
           timestamp: nowIso,
           office: '気象庁発表',
-          areaName: '東京都',
+          areaName: testSubArea || '東京都',
+          prefectureName: '東京都',
+          subAreaName: testSubArea,
           rawType: 'warning',
           tickerBadges: [
             {

@@ -70,6 +70,7 @@ export interface LTelopConfig {
     maxEarthquakeItems: number;
     warningMaxAgeHours: number; // 1 - 72 hours
     earthquakeMaxAgeHours: number; // 1 - 72 hours
+    warningAreaLevel: 'prefecture' | 'region' | 'municipality';
     enableTyphoon: boolean;
     enableCustomMessages: boolean;
     regionScope: 'all' | 'regions' | 'prefectures';
@@ -163,6 +164,8 @@ export interface TelopItem {
   timestamp: string;
   office?: string;
   areaName?: string;
+  prefectureName?: string;
+  subAreaName?: string;
   rawType: 'warning' | 'earthquake' | 'typhoon' | 'test' | 'custom';
   rawData?: any;
   /** 下部ティッカー左端のクロスディゾルブ表示用バッジ候補 */
@@ -247,6 +250,7 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
     maxEarthquakeItems: 3,
     warningMaxAgeHours: 24,
     earthquakeMaxAgeHours: 24,
+    warningAreaLevel: 'prefecture',
     enableTyphoon: true,
     enableCustomMessages: true,
     regionScope: 'all',
@@ -408,6 +412,7 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
       ...cfg.info,
       warningMaxAgeHours: clampHours(cfg.info?.warningMaxAgeHours, 24),
       earthquakeMaxAgeHours: clampHours(cfg.info?.earthquakeMaxAgeHours, 24),
+      warningAreaLevel: cfg.info?.warningAreaLevel || 'prefecture',
     },
     colors: {
       ...cfg.colors,

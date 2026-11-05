@@ -222,72 +222,90 @@ export default function LTelopOverlay({
     return () => clearInterval(id);
   }, []);
 
-  // ティッカー内で現在読まれているアイテムのインデックス
-  const [activeTickerItemIdx, setActiveTickerItemIdx] = useState(0);
-  const activeItemIdxRef = useRef(0);
-  const itemSpanRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  // アイテムから情報種類見出し名を算出するヘルパー
+  const getItemHeadingLabel = (item: TelopItem): string => {
+    if (
+      item.rawType === 'warning' ||
+      item.category === 'warning' ||
+      item.category === 'advisory' ||
+      item.category === 'special_warning'
+    ) {
+      return '警報・注意報';
+    }
+    if (item.rawType === 'earthquake' || item.category === 'earthquake') {
+      return '地震情報';
+    }
+    if (item.rawType === 'typhoon' || item.category === 'typhoon') {
+      return '台風情報';
+    }
+    if (item.category === 'tsunami_warning' || item.category === 'tsunami_advisory') {
+      return '津波情報';
+    }
+    if (item.category === 'volcano') {
+      return '噴火情報';
+    }
+    if (item.category === 'tornado') {
+      return '竜巻注意情報';
+    }
+    if (item.category === 'heavy_rain') {
+      return '記録的短時間大雨情報';
+    }
+    if (item.category === 'landslide') {
+      return '土砂災害警戒情報';
+    }
+    return item.categoryLabel || '防災・気象情報';
+  };
+
+  // 各情報種類ごとにグループ化（同じ見出しの情報を出し切ってから次の見出しへ切り替える）
+  const categoryGroups = useMemo<{ headingLabel: string; items: TelopItem[] }[]>(() => {
+    const map = new Map<string, TelopItem[]>();
+    for (const item of items) {
+      const heading = getItemHeadingLabel(item);
+      const list = map.get(heading);
+      if (list) {
+        list.push(item);
+      } else {
+        map.set(heading, [item]);
+      }
+    }
+    return Array.from(map.entries()).map(([headingLabel, groupItems]) => ({
+      headingLabel,
+      items: groupItems,
+    }));
+  }, [items]);
+
+  const [activeGroupIdx, setActiveGroupIdx] = useState(0);
+  const hasSwitchedOnceRef = useRef(false);
+
+  const safeGroupIdx = categoryGroups.length > 0 ? activeGroupIdx % categoryGroups.length : 0;
+  const activeGroup = categoryGroups[safeGroupIdx] || null;
+  const activeGroupItems = activeGroup ? activeGroup.items : [];
 
   // 現在表示すべき下部ティッカー左端のバッジ情報を算出（情報の種類名を原則黒・別途設定色でクロスディゾルブ表示）
   const currentTickerBadge = useMemo<TickerBadgeInfo>(() => {
-    const bgColor = config.areaColors.headerBadge.bgColor;
-    const textColor = config.areaColors.headerBadge.textColor;
-
-    if (items.length === 0) {
-      return {
-        label: '防災・気象情報',
-        bgColor,
-        textColor,
-      };
-    }
-
-    const safeItemIdx = activeTickerItemIdx < items.length ? activeTickerItemIdx : 0;
-    const currentItem = items[safeItemIdx] || items[0];
-
-    let label = currentItem.categoryLabel || '防災・気象情報';
-    if (
-      currentItem.rawType === 'warning' ||
-      currentItem.category === 'warning' ||
-      currentItem.category === 'advisory' ||
-      currentItem.category === 'special_warning'
-    ) {
-      label = '警報・注意報';
-    } else if (currentItem.rawType === 'earthquake' || currentItem.category === 'earthquake') {
-      label = '地震情報';
-    } else if (currentItem.rawType === 'typhoon' || currentItem.category === 'typhoon') {
-      label = '台風情報';
-    } else if (
-      currentItem.category === 'tsunami_warning' ||
-      currentItem.category === 'tsunami_advisory'
-    ) {
-      label = '津波情報';
-    } else if (currentItem.category === 'volcano') {
-      label = '噴火情報';
-    } else if (currentItem.category === 'tornado') {
-      label = '竜巻注意情報';
-    } else if (currentItem.category === 'heavy_rain') {
-      label = '記録的短時間大雨情報';
-    } else if (currentItem.category === 'landslide') {
-      label = '土砂災害警戒情報';
-    }
-
     return {
-      label,
-      bgColor,
-      textColor,
+      label: activeGroup ? activeGroup.headingLabel : '防災・気象情報',
+      bgColor: config.areaColors.headerBadge.bgColor,
+      textColor: config.areaColors.headerBadge.textColor,
     };
-  }, [items, activeTickerItemIdx, config.areaColors.headerBadge]);
+  }, [activeGroup, config.areaColors.headerBadge]);
 
-  // ティッカー60fps requestAnimationFrame スクロール & 現在通過中のアイテム検知
+  // ティッカー60fps requestAnimationFrame スクロール（現在の情報種類を出し切ったら次の情報種類見出しへ切り替え）
   const tickerContainerRef = useRef<HTMLDivElement>(null);
   const tickerViewportRef = useRef<HTMLDivElement>(null);
   const tickerTrackRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef<number>(0);
 
-  const tickerTextSignature = items.map(i => `${i.id}:${i.headlineText}`).join('||');
+  const activeGroupSignature = activeGroup
+    ? `${activeGroup.headingLabel}::${activeGroup.items.map(i => `${i.id}:${i.headlineText}`).join('||')}`
+    : 'empty';
 
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
+    // 情報種類見出しが切り替わった直後はクロスディゾルブが完了するまでスクロール開始を待機 (700ms)
+    const holdUntil =
+      hasSwitchedOnceRef.current && categoryGroups.length > 1 ? performance.now() + 700 : 0;
 
     const viewportEl = tickerViewportRef.current;
     const trackEl = tickerTrackRef.current;
@@ -296,10 +314,19 @@ export default function LTelopOverlay({
     const containerWidth = viewportEl.clientWidth || 1600;
     const dir = config.layout.ticker.scrollDirection;
     offsetRef.current = dir === 'rtl' ? containerWidth : -trackEl.scrollWidth;
+    trackEl.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
+
+    let switched = false;
 
     const step = (time: number) => {
       const dt = Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
+
+      if (time < holdUntil) {
+        animId = requestAnimationFrame(step);
+        return;
+      }
+
       const speed = Math.max(20, config.layout.ticker.scrollSpeed || 80);
       const trackWidth = trackEl.scrollWidth || 800;
       const cw = viewportEl.clientWidth || 1600;
@@ -307,57 +334,37 @@ export default function LTelopOverlay({
       if (dir === 'rtl') {
         offsetRef.current -= speed * dt;
         if (offsetRef.current < -trackWidth) {
+          if (categoryGroups.length > 1 && !switched) {
+            switched = true;
+            hasSwitchedOnceRef.current = true;
+            setActiveGroupIdx(prev => (prev + 1) % categoryGroups.length);
+            return;
+          }
           offsetRef.current = cw;
         }
       } else {
         offsetRef.current += speed * dt;
         if (offsetRef.current > cw) {
+          if (categoryGroups.length > 1 && !switched) {
+            switched = true;
+            hasSwitchedOnceRef.current = true;
+            setActiveGroupIdx(prev => (prev + 1) % categoryGroups.length);
+            return;
+          }
           offsetRef.current = -trackWidth;
         }
       }
 
       trackEl.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
-
-      // スクロール位置から現在ティッカー左側の読み取りゾーンにあるアイテムを特定し、左端ラベルを同期切替
-      if (items.length > 0) {
-        const readZoneX = cw * 0.25;
-        let matchedIdx = -1;
-        for (let i = 0; i < items.length; i++) {
-          const el = itemSpanRefs.current[i];
-          if (!el) continue;
-          const itemStart = offsetRef.current + el.offsetLeft;
-          const itemEnd = itemStart + el.offsetWidth + 64;
-          if (itemStart <= readZoneX && itemEnd >= 0) {
-            matchedIdx = i;
-            break;
-          }
-        }
-        if (matchedIdx === -1) {
-          // まだ右端から入ってきたばかりの先頭アイテムを探す
-          for (let i = 0; i < items.length; i++) {
-            const el = itemSpanRefs.current[i];
-            if (!el) continue;
-            const itemStart = offsetRef.current + el.offsetLeft;
-            if (itemStart <= cw && itemStart + el.offsetWidth >= 0) {
-              matchedIdx = i;
-              break;
-            }
-          }
-        }
-        if (matchedIdx !== -1 && matchedIdx !== activeItemIdxRef.current) {
-          activeItemIdxRef.current = matchedIdx;
-          setActiveTickerItemIdx(matchedIdx);
-        }
-      }
-
       animId = requestAnimationFrame(step);
     };
 
     animId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(animId);
   }, [
-    tickerTextSignature,
-    items.length,
+    activeGroupSignature,
+    safeGroupIdx,
+    categoryGroups.length,
     config.layout.ticker.scrollSpeed,
     config.layout.ticker.scrollDirection,
   ]);
@@ -847,59 +854,63 @@ export default function LTelopOverlay({
                 paddingLeft: '24px',
               }}
             >
-              {items.length > 0 ? (
-                items.map((item, idx) => (
-                  <span
-                    key={item.id}
-                    ref={el => {
-                      itemSpanRefs.current[idx] = el;
-                    }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                    }}
-                  >
-                    {item.inlineBadges && item.inlineBadges.length > 0 ? (
-                      <>
-                        <span style={{ fontWeight: 900 }}>【{item.areaName}】</span>
-                        {item.inlineBadges.map((wb, wbIdx) => (
-                          <span
-                            key={`${item.id}-wb-${wbIdx}`}
-                            style={{
-                              backgroundColor: wb.bgColor,
-                              color: wb.textColor,
-                              padding: '3px 12px',
-                              borderRadius: '6px',
-                              fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
-                              fontWeight: 900,
-                            }}
-                          >
-                            {wb.label}
+              {activeGroupItems.length > 0 ? (
+                activeGroupItems.map(item => {
+                  const prefText = item.prefectureName || item.areaName;
+                  const subArea =
+                    item.subAreaName && item.subAreaName !== prefText ? item.subAreaName : '';
+                  return (
+                    <span
+                      key={item.id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                      }}
+                    >
+                      {item.inlineBadges && item.inlineBadges.length > 0 ? (
+                        <>
+                          <span style={{ fontWeight: 900 }}>
+                            【{prefText}】{subArea}
                           </span>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        {(item.badgeText || item.categoryLabel) && (
-                          <span
-                            style={{
-                              backgroundColor: item.bgColor,
-                              color: item.textColor,
-                              padding: '3px 12px',
-                              borderRadius: '6px',
-                              fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
-                              fontWeight: 900,
-                            }}
-                          >
-                            {item.badgeText || item.categoryLabel}
-                          </span>
-                        )}
-                        <span>{item.headlineText}</span>
-                      </>
-                    )}
-                  </span>
-                ))
+                          {item.inlineBadges.map((wb, wbIdx) => (
+                            <span
+                              key={`${item.id}-wb-${wbIdx}`}
+                              style={{
+                                backgroundColor: wb.bgColor,
+                                color: wb.textColor,
+                                padding: '3px 12px',
+                                borderRadius: '6px',
+                                fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
+                                fontWeight: 900,
+                              }}
+                            >
+                              {wb.label}
+                            </span>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          {(item.badgeText || item.categoryLabel) && (
+                            <span
+                              style={{
+                                backgroundColor: item.bgColor,
+                                color: item.textColor,
+                                padding: '3px 12px',
+                                borderRadius: '6px',
+                                fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
+                                fontWeight: 900,
+                              }}
+                            >
+                              {item.badgeText || item.categoryLabel}
+                            </span>
+                          )}
+                          <span>{item.headlineText}</span>
+                        </>
+                      )}
+                    </span>
+                  );
+                })
               ) : (
                 <span>
                   現在、表示対象の特別警報・警報・地震・台風情報はありません（気象庁発表）
