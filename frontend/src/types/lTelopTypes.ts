@@ -42,6 +42,15 @@ export interface TyphoonMapLayoutConfig extends LayoutElementConfig {
   tileType: 'osm' | 'gsi' | 'carto';
 }
 
+export interface ClockLayoutConfig extends LayoutElementConfig {
+  fontFamily: string;
+  timeFontWeight: number;
+  timeFontSize: number;
+  dateFontWeight: number;
+  dateFontSize: number;
+  dateFormatMode?: 'alternate' | 'ja' | 'en';
+}
+
 export interface PriorityRule {
   category: TelopCategory;
   label: string;
@@ -129,7 +138,7 @@ export interface LTelopConfig {
     ticker: TickerLayoutConfig;
     typhoonMap: TyphoonMapLayoutConfig;
     earthquakePanel: LayoutElementConfig;
-    clock: LayoutElementConfig;
+    clock: ClockLayoutConfig;
     attribution: LayoutElementConfig;
   };
   advanced: {
@@ -370,6 +379,12 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
       width: 114,
       height: 100,
       visible: true,
+      fontFamily: "'Open Sans', sans-serif",
+      timeFontWeight: 800,
+      timeFontSize: 32,
+      dateFontWeight: 700,
+      dateFontSize: 13,
+      dateFormatMode: 'alternate',
     },
     attribution: {
       x: 1680,
@@ -407,13 +422,25 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
     if (!Number.isFinite(n)) return fallback;
     return Math.max(1, Math.min(72, Math.round(n)));
   };
+  const rawClock = cfg.layout?.clock as any;
   const isOldRectClock =
-    cfg.layout?.clock &&
-    cfg.layout.clock.width === 186 &&
-    (cfg.layout.clock.height === 54 || cfg.layout.clock.height === 64);
-  const clockLayout = isOldRectClock
-    ? { ...cfg.layout.clock, x: 1782, y: 24, width: 114, height: 100 }
-    : cfg.layout?.clock;
+    rawClock &&
+    rawClock.width === 186 &&
+    (rawClock.height === 54 || rawClock.height === 64);
+  const clockLayout: ClockLayoutConfig = {
+    x: isOldRectClock ? 1782 : rawClock?.x ?? 1782,
+    y: isOldRectClock ? 24 : rawClock?.y ?? 24,
+    width: isOldRectClock ? 114 : rawClock?.width ?? 114,
+    height: isOldRectClock ? 100 : rawClock?.height ?? 100,
+    visible: rawClock?.visible ?? true,
+    locked: rawClock?.locked ?? false,
+    fontFamily: rawClock?.fontFamily || "'Open Sans', sans-serif",
+    timeFontWeight: Number(rawClock?.timeFontWeight) || 800,
+    timeFontSize: Number(rawClock?.timeFontSize) || 32,
+    dateFontWeight: Number(rawClock?.dateFontWeight) || 700,
+    dateFontSize: Number(rawClock?.dateFontSize) || 13,
+    dateFormatMode: rawClock?.dateFormatMode || 'alternate',
+  };
 
   return {
     ...cfg,

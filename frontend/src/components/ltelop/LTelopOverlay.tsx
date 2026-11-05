@@ -223,6 +223,15 @@ export default function LTelopOverlay({
     return () => clearInterval(id);
   }, []);
 
+  // 時計の日付表示切替ステート（「M月D日(曜日)」と「MM/DD (曜日・英字)」の定期切替）
+  const [dateToggle, setDateToggle] = useState<'ja' | 'en'>('ja');
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDateToggle(prev => (prev === 'ja' ? 'en' : 'ja'));
+    }, 4500);
+    return () => clearInterval(timer);
+  }, []);
+
   // アイテムから情報種類見出し名を算出するヘルパー
   const getItemHeadingLabel = (item: TelopItem): string => {
     if (
@@ -1052,12 +1061,24 @@ export default function LTelopOverlay({
       {renderEditableFrame(
         'clock',
         (() => {
-          const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
-          const weekday = WEEKDAYS[now.getDay()];
+          const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
+          const WEEKDAYS_EN = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+          const weekdayIdx = now.getDay();
+          const weekdayJa = WEEKDAYS_JA[weekdayIdx];
+          const weekdayEn = WEEKDAYS_EN[weekdayIdx];
           const hours = String(now.getHours()).padStart(2, '0');
           const minutes = String(now.getMinutes()).padStart(2, '0');
           const month = now.getMonth() + 1;
           const date = now.getDate();
+
+          const clockCfg = config.layout.clock;
+          const clockFontFamily = clockCfg?.fontFamily || "'Open Sans', sans-serif";
+          const timeWeight = clockCfg?.timeFontWeight ?? 800;
+          const timeSize = clockCfg?.timeFontSize ?? 32;
+          const dateWeight = clockCfg?.dateFontWeight ?? 700;
+          const dateSize = clockCfg?.dateFontSize ?? 13;
+          const formatMode = clockCfg?.dateFormatMode || 'alternate';
+          const isEn = formatMode === 'en' || (formatMode === 'alternate' && dateToggle === 'en');
 
           return (
             <div
@@ -1078,12 +1099,12 @@ export default function LTelopOverlay({
                 userSelect: 'none',
               }}
             >
-              {/* 上段: 時計 (時:分、秒数なし、Open Sans bold 700以上) */}
+              {/* 上段: 時計 (時:分、秒数なし、設定フォント・ウェイト・サイズ) */}
               <div
                 style={{
-                  fontFamily: "'Open Sans', 'Lato', sans-serif",
-                  fontWeight: 800,
-                  fontSize: '32px',
+                  fontFamily: `${clockFontFamily}, 'Lato', sans-serif`,
+                  fontWeight: timeWeight,
+                  fontSize: `${timeSize}px`,
                   lineHeight: 1,
                   letterSpacing: '0.5px',
                   color: '#ffffff',
@@ -1103,48 +1124,80 @@ export default function LTelopOverlay({
                 }}
               />
 
-              {/* 下段: 日付(曜日) (数字部分はOpen Sans bold 700以上) */}
+              {/* 下段: 日付(曜日) (「M月D日(曜日)」と「MM/DD (曜日・英字)」の定期切替) */}
               <div
+                key={isEn ? 'date-en' : 'date-ja'}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '13px',
+                  fontSize: `${dateSize}px`,
                   lineHeight: 1,
-                  fontWeight: 700,
+                  fontWeight: dateWeight,
                   color: '#e2e8f0',
                   gap: '1px',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <span
-                  style={{
-                    fontFamily: "'Open Sans', 'Lato', sans-serif",
-                    fontWeight: 700,
-                    color: '#ffffff',
-                  }}
-                >
-                  {month}
-                </span>
-                <span style={{ fontSize: '11px', opacity: 0.9 }}>月</span>
-                <span
-                  style={{
-                    fontFamily: "'Open Sans', 'Lato', sans-serif",
-                    fontWeight: 700,
-                    color: '#ffffff',
-                  }}
-                >
-                  {date}
-                </span>
-                <span style={{ fontSize: '11px', opacity: 0.9 }}>日</span>
-                <span
-                  style={{
-                    marginLeft: '2px',
-                    fontSize: '12px',
-                    color: weekday === '日' ? '#f87171' : weekday === '土' ? '#60a5fa' : '#cbd5e1',
-                  }}
-                >
-                  ({weekday})
-                </span>
+                {isEn ? (
+                  <>
+                    <span
+                      style={{
+                        fontFamily: `${clockFontFamily}, 'Lato', sans-serif`,
+                        fontWeight: dateWeight,
+                        color: '#ffffff',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      {String(month).padStart(2, '0')}/{String(date).padStart(2, '0')}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: '3px',
+                        fontFamily: `${clockFontFamily}, 'Lato', sans-serif`,
+                        fontSize: `${Math.max(10, Math.round(dateSize * 0.88))}px`,
+                        fontWeight: dateWeight,
+                        color: weekdayJa === '日' ? '#f87171' : weekdayJa === '土' ? '#60a5fa' : '#cbd5e1',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      ({weekdayEn})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span
+                      style={{
+                        fontFamily: `${clockFontFamily}, 'Lato', sans-serif`,
+                        fontWeight: dateWeight,
+                        color: '#ffffff',
+                      }}
+                    >
+                      {month}
+                    </span>
+                    <span style={{ fontSize: `${Math.max(10, Math.round(dateSize * 0.85))}px`, opacity: 0.9 }}>月</span>
+                    <span
+                      style={{
+                        fontFamily: `${clockFontFamily}, 'Lato', sans-serif`,
+                        fontWeight: dateWeight,
+                        color: '#ffffff',
+                      }}
+                    >
+                      {date}
+                    </span>
+                    <span style={{ fontSize: `${Math.max(10, Math.round(dateSize * 0.85))}px`, opacity: 0.9 }}>日</span>
+                    <span
+                      style={{
+                        marginLeft: '2px',
+                        fontSize: `${Math.max(10, Math.round(dateSize * 0.92))}px`,
+                        fontWeight: dateWeight,
+                        color: weekdayJa === '日' ? '#f87171' : weekdayJa === '土' ? '#60a5fa' : '#cbd5e1',
+                      }}
+                    >
+                      ({weekdayJa})
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           );

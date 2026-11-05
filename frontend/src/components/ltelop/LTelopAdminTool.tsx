@@ -2065,6 +2065,140 @@ export default function LTelopAdminTool({
                         </label>
                       </div>
                     )}
+
+                    {selectedBox === 'clock' && (
+                      <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                        <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          フォント種類
+                          <select
+                            value={config.layout.clock.fontFamily}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: { ...prev.layout.clock, fontFamily: e.target.value },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          >
+                            <option value="'Open Sans', sans-serif">Open Sans (Google Fonts / 推奨)</option>
+                            <option value="'LINE Seed JP', sans-serif">LINE Seed JP</option>
+                            <option value="'Lato', sans-serif">Lato</option>
+                            <option value="'Noto Sans JP', sans-serif">Noto Sans JP</option>
+                            <option value="sans-serif">システム標準 (sans-serif)</option>
+                            <option value="'monospace', monospace">等幅フォント (monospace)</option>
+                          </select>
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          時刻文字サイズ ({config.layout.clock.timeFontSize}px)
+                          <input
+                            type="number"
+                            min={18}
+                            max={56}
+                            value={config.layout.clock.timeFontSize}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: { ...prev.layout.clock, timeFontSize: Number(e.target.value) },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          時刻ウェイト
+                          <select
+                            value={config.layout.clock.timeFontWeight}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: { ...prev.layout.clock, timeFontWeight: Number(e.target.value) },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          >
+                            <option value={900}>900 (Black / 超極太)</option>
+                            <option value={800}>800 (ExtraBold / 極太 - 推奨)</option>
+                            <option value={700}>700 (Bold / 太字)</option>
+                            <option value={600}>600 (SemiBold / 中太)</option>
+                            <option value={400}>400 (Regular / 標準)</option>
+                          </select>
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          日付文字サイズ ({config.layout.clock.dateFontSize}px)
+                          <input
+                            type="number"
+                            min={10}
+                            max={28}
+                            value={config.layout.clock.dateFontSize}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: { ...prev.layout.clock, dateFontSize: Number(e.target.value) },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          日付ウェイト
+                          <select
+                            value={config.layout.clock.dateFontWeight}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: { ...prev.layout.clock, dateFontWeight: Number(e.target.value) },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          >
+                            <option value={800}>800 (ExtraBold / 極太)</option>
+                            <option value={700}>700 (Bold / 太字 - 推奨)</option>
+                            <option value={600}>600 (SemiBold / 中太)</option>
+                            <option value={400}>400 (Regular / 標準)</option>
+                          </select>
+                        </label>
+
+                        <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          日付・曜日の表示形式
+                          <select
+                            value={config.layout.clock.dateFormatMode || 'alternate'}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: { ...prev.layout.clock, dateFormatMode: e.target.value as any },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          >
+                            <option value="alternate">定期交互切替 (M月D日(曜日) ⇄ MM/DD (曜日・英字) - 推奨)</option>
+                            <option value="ja">日本語表記固定 (例: 11月6日(金))</option>
+                            <option value="en">英字表記固定 (例: 11/06(FRI))</option>
+                          </select>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
