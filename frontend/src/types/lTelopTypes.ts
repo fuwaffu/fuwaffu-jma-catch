@@ -49,6 +49,7 @@ export interface ClockLayoutConfig extends LayoutElementConfig {
   dateFontWeight: number;
   dateFontSize: number;
   dateFormatMode?: 'alternate' | 'ja' | 'en';
+  dividerThickness?: number;
 }
 
 export interface PriorityRule {
@@ -385,6 +386,7 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
       dateFontWeight: 700,
       dateFontSize: 13,
       dateFormatMode: 'alternate',
+      dividerThickness: 1,
     },
     attribution: {
       x: 1680,
@@ -440,6 +442,8 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
     dateFontWeight: Number(rawClock?.dateFontWeight) || 700,
     dateFontSize: Number(rawClock?.dateFontSize) || 13,
     dateFormatMode: rawClock?.dateFormatMode || 'alternate',
+    dividerThickness:
+      rawClock?.dividerThickness !== undefined ? Number(rawClock?.dividerThickness) : 1,
   };
 
   return {

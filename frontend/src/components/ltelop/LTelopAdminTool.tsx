@@ -820,7 +820,7 @@ export default function LTelopAdminTool({
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           {[
                             { id: 'prefecture', label: '都道府県ごと (東京都)' },
-                            { id: 'region', label: '地方ごと (東京都　東京地方)' },
+                            { id: 'region', label: '地方ごと (東京都 東京地方)' },
                             { id: 'municipality', label: '市区町村ごと (東京都・千代田区)' },
                           ].map(opt => (
                             <button
@@ -2175,6 +2175,29 @@ export default function LTelopAdminTool({
                             <option value={600}>600 (SemiBold / 中太)</option>
                             <option value={400}>400 (Regular / 標準)</option>
                           </select>
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          区切り直線の太さ ({config.layout.clock.dividerThickness ?? 1}px)
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            value={config.layout.clock.dividerThickness ?? 1}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  clock: {
+                                    ...prev.layout.clock,
+                                    dividerThickness: Math.max(0, Number(e.target.value)),
+                                  },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          />
                         </label>
 
                         <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>

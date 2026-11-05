@@ -236,7 +236,7 @@ export function buildTelopQueue(
     let areaDisplayText = group.prefecture;
     if (areaLevel === 'region' && rawSubArea) {
       formattedSubArea = formatRegionName(rawSubArea);
-      areaDisplayText = `${group.prefecture}　${formattedSubArea}`;
+      areaDisplayText = `${group.prefecture} ${formattedSubArea}`;
     } else if (areaLevel === 'municipality' && rawSubArea) {
       formattedSubArea = rawSubArea;
       areaDisplayText = `${group.prefecture}・${rawSubArea}`;
@@ -455,10 +455,10 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
       ? formatRegionName(rawTestSpecialSubArea)
       : rawTestSpecialSubArea;
   const testSpecialAreaDisplay = testSpecialSubArea
-    ? (areaLevel === 'region' ? `東京都　${testSpecialSubArea}` : `東京都・${testSpecialSubArea}`)
+    ? (areaLevel === 'region' ? `東京都 ${testSpecialSubArea}` : `東京都・${testSpecialSubArea}`)
     : '東京都';
   const testWarningAreaDisplay = testSubArea
-    ? (areaLevel === 'region' ? `東京都　${testSubArea}` : `東京都・${testSubArea}`)
+    ? (areaLevel === 'region' ? `東京都 ${testSubArea}` : `東京都・${testSubArea}`)
     : '東京都';
   switch (presetKey) {
     case 'special_warning':

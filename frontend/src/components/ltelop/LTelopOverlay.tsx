@@ -875,7 +875,7 @@ export default function LTelopOverlay({
                       item.areaLevel === 'region' || config.info.warningAreaLevel === 'region';
                     if (isRegion) {
                       const formattedRegion = formatRegionName(subArea);
-                      areaDisplayText = `${prefText}　${formattedRegion}`;
+                      areaDisplayText = `${prefText} ${formattedRegion}`;
                     } else {
                       areaDisplayText = `${prefText}・${subArea}`;
                     }
@@ -1078,6 +1078,7 @@ export default function LTelopOverlay({
           const dateWeight = clockCfg?.dateFontWeight ?? 700;
           const dateSize = clockCfg?.dateFontSize ?? 13;
           const formatMode = clockCfg?.dateFormatMode || 'alternate';
+          const dividerThickness = clockCfg?.dividerThickness ?? 1;
           const isEn = formatMode === 'en' || (formatMode === 'alternate' && dateToggle === 'en');
 
           return (
@@ -1115,14 +1116,16 @@ export default function LTelopOverlay({
               </div>
 
               {/* 区切り線 ----- */}
-              <div
-                style={{
-                  width: '80%',
-                  height: '1px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                  margin: '7px 0 6px 0',
-                }}
-              />
+              {dividerThickness > 0 && (
+                <div
+                  style={{
+                    width: '80%',
+                    height: `${dividerThickness}px`,
+                    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                    margin: '7px 0 6px 0',
+                  }}
+                />
+              )}
 
               {/* 下段: 日付(曜日) (「M月D日(曜日)」と「MM/DD (曜日・英字)」の定期切替) */}
               <div
