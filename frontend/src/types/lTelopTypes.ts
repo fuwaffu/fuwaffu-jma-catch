@@ -396,31 +396,12 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
     if (!Number.isFinite(n)) return fallback;
     return Math.max(1, Math.min(72, Math.round(n)));
   };
-  const specialBg =
-    cfg.colors?.warningLevels?.special?.bg?.toUpperCase() === '#8B008B'
-      ? '#000000'
-      : cfg.colors?.warningLevels?.special?.bg ?? '#000000';
-  const clampHours = (h: any, fallback = 24) => {
-    const n = Number(h);
-    if (!Number.isFinite(n)) return fallback;
-    return Math.max(1, Math.min(72, Math.round(n)));
-  };
   return {
     ...cfg,
     info: {
       ...cfg.info,
       warningMaxAgeHours: clampHours(cfg.info?.warningMaxAgeHours, 24),
       earthquakeMaxAgeHours: clampHours(cfg.info?.earthquakeMaxAgeHours, 24),
-    },
-    colors: {
-      ...cfg.colors,
-      warningLevels: {
-        ...cfg.colors.warningLevels,
-        special: {
-          ...cfg.colors.warningLevels.special,
-          bg: specialBg,
-        },
-      },
     },
     colors: {
       ...cfg.colors,
