@@ -871,7 +871,7 @@ export default function LTelopOverlay({
                       {item.inlineBadges && item.inlineBadges.length > 0 ? (
                         <>
                           <span style={{ fontWeight: 900 }}>
-                            【{prefText}】{subArea}
+                            {subArea ? `${prefText}・${subArea}` : prefText}
                           </span>
                           {item.inlineBadges.map((wb, wbIdx) => (
                             <span
