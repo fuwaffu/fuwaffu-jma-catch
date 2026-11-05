@@ -222,51 +222,60 @@ export default function LTelopOverlay({
     return () => clearInterval(id);
   }, []);
 
-  // ティッカー内で現在読まれているアイテムのインデックス & サブ警報サイクルインデックス
+  // ティッカー内で現在読まれているアイテムのインデックス
   const [activeTickerItemIdx, setActiveTickerItemIdx] = useState(0);
-  const [subBadgeCycleIdx, setSubBadgeCycleIdx] = useState(0);
   const activeItemIdxRef = useRef(0);
   const itemSpanRefs = useRef<(HTMLSpanElement | null)[]>([]);
 
-  // 3.2秒ごとに警報バッジ（複数警報がある場合や複数アイテム待機時）をサイクルしてクロスディゾルブ切替
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSubBadgeCycleIdx(c => c + 1);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 現在表示すべき下部ティッカー左端のバッジ情報を算出
+  // 現在表示すべき下部ティッカー左端のバッジ情報を算出（情報の種類名を原則黒・別途設定色でクロスディゾルブ表示）
   const currentTickerBadge = useMemo<TickerBadgeInfo>(() => {
+    const bgColor = config.areaColors.headerBadge.bgColor;
+    const textColor = config.areaColors.headerBadge.textColor;
+
     if (items.length === 0) {
       return {
         label: '防災・気象情報',
-        subLabel: '気象庁発表',
-        bgColor: config.areaColors.headerBadge.bgColor,
-        textColor: config.areaColors.headerBadge.textColor,
+        bgColor,
+        textColor,
       };
     }
 
     const safeItemIdx = activeTickerItemIdx < items.length ? activeTickerItemIdx : 0;
     const currentItem = items[safeItemIdx] || items[0];
 
-    // 現在スクロール中のアイテムに複数の警報バッジ（例：大雨警報・洪水警報・雷注意報）がある場合はそれを順にクロスディゾルブ
-    if (currentItem.tickerBadges && currentItem.tickerBadges.length > 1) {
-      return currentItem.tickerBadges[subBadgeCycleIdx % currentItem.tickerBadges.length];
-    }
-
-    // 単一バッジのアイテムが複数ある場合は、スクロール位置のアイテムのバッジを表示
-    if (currentItem.tickerBadges && currentItem.tickerBadges.length === 1) {
-      return currentItem.tickerBadges[0];
+    let label = currentItem.categoryLabel || '防災・気象情報';
+    if (
+      currentItem.rawType === 'warning' ||
+      currentItem.category === 'warning' ||
+      currentItem.category === 'advisory' ||
+      currentItem.category === 'special_warning'
+    ) {
+      label = '警報・注意報';
+    } else if (currentItem.rawType === 'earthquake' || currentItem.category === 'earthquake') {
+      label = '地震情報';
+    } else if (currentItem.rawType === 'typhoon' || currentItem.category === 'typhoon') {
+      label = '台風情報';
+    } else if (
+      currentItem.category === 'tsunami_warning' ||
+      currentItem.category === 'tsunami_advisory'
+    ) {
+      label = '津波情報';
+    } else if (currentItem.category === 'volcano') {
+      label = '噴火情報';
+    } else if (currentItem.category === 'tornado') {
+      label = '竜巻注意情報';
+    } else if (currentItem.category === 'heavy_rain') {
+      label = '記録的短時間大雨情報';
+    } else if (currentItem.category === 'landslide') {
+      label = '土砂災害警戒情報';
     }
 
     return {
-      label: currentItem.categoryLabel,
-      subLabel: currentItem.areaName,
-      bgColor: currentItem.bgColor,
-      textColor: currentItem.textColor,
+      label,
+      bgColor,
+      textColor,
     };
-  }, [items, activeTickerItemIdx, subBadgeCycleIdx, config.areaColors.headerBadge]);
+  }, [items, activeTickerItemIdx, config.areaColors.headerBadge]);
 
   // ティッカー60fps requestAnimationFrame スクロール & 現在通過中のアイテム検知
   const tickerContainerRef = useRef<HTMLDivElement>(null);
@@ -848,22 +857,47 @@ export default function LTelopOverlay({
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '14px',
+                      gap: '10px',
                     }}
                   >
-                    <span
-                      style={{
-                        backgroundColor: item.bgColor,
-                        color: item.textColor,
-                        padding: '3px 12px',
-                        borderRadius: '6px',
-                        fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
-                        fontWeight: 900,
-                      }}
-                    >
-                      {item.badgeText || item.categoryLabel}
-                    </span>
-                    <span>{item.headlineText}</span>
+                    {item.inlineBadges && item.inlineBadges.length > 0 ? (
+                      <>
+                        <span style={{ fontWeight: 900 }}>【{item.areaName}】</span>
+                        {item.inlineBadges.map((wb, wbIdx) => (
+                          <span
+                            key={`${item.id}-wb-${wbIdx}`}
+                            style={{
+                              backgroundColor: wb.bgColor,
+                              color: wb.textColor,
+                              padding: '3px 12px',
+                              borderRadius: '6px',
+                              fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
+                              fontWeight: 900,
+                            }}
+                          >
+                            {wb.label}
+                          </span>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        {(item.badgeText || item.categoryLabel) && (
+                          <span
+                            style={{
+                              backgroundColor: item.bgColor,
+                              color: item.textColor,
+                              padding: '3px 12px',
+                              borderRadius: '6px',
+                              fontSize: `${Math.max(16, Math.round(config.layout.ticker.fontSize * 0.75))}px`,
+                              fontWeight: 900,
+                            }}
+                          >
+                            {item.badgeText || item.categoryLabel}
+                          </span>
+                        )}
+                        <span>{item.headlineText}</span>
+                      </>
+                    )}
                   </span>
                 ))
               ) : (
@@ -910,7 +944,7 @@ export default function LTelopOverlay({
               <span>
                 🌀{' '}
                 {activeTyphoonItem
-                  ? `${activeTyphoonItem.categoryLabel} 進路予想図`
+                  ? `${activeTyphoonItem.badgeText || activeTyphoonItem.categoryLabel} 進路予想図`
                   : '台風進路マップ（待機中）'}
               </span>
               <span style={{ fontSize: '12px', opacity: 0.9 }}>気象庁発表</span>

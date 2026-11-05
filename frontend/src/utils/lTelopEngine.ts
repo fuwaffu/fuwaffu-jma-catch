@@ -193,29 +193,37 @@ export function buildTelopQueue(
     if (!isWithinHours(group.reportDateTime, config.info.warningMaxAgeHours)) continue;
     if (!isWithinDuration(group.reportDateTime, rule.durationSec)) continue;
 
-    // 各警報・注意報ごとのクロスディゾルブ用バッジ一覧を生成
-    const tickerBadges: TickerBadgeInfo[] = filteredEntries.map(e => {
+    // 各警報・注意報ごとのインラインラベル一覧を生成（ティッカー本文内でラベル表示）
+    const inlineBadges: TickerBadgeInfo[] = filteredEntries.map(e => {
       const c = getWarningEntryColor(e.warningLevel, config);
       return {
         label: cleanWarningLabel(e.warningName),
-        subLabel: group.area,
         bgColor: c.bg,
         textColor: c.text,
       };
     });
 
-    const primaryBadge = tickerBadges[0];
-    const namesText = filteredEntries.map(e => e.warningName).join('・');
-    const headlineText = `【${group.area}】${namesText} 発表中`;
+    const primaryBadge = inlineBadges[0];
+    const namesText = inlineBadges.map(b => b.label).join('・');
+    const headlineText = `【${group.area}】${namesText}`;
+
+    // 下部ティッカー左端クロスディゾルブ用バッジ（警報情報の場合は「警報・注意報」を原則黒の指定色で表示）
+    const tickerBadges: TickerBadgeInfo[] = [
+      {
+        label: '警報・注意報',
+        bgColor: config.areaColors.headerBadge.bgColor,
+        textColor: config.areaColors.headerBadge.textColor,
+      },
+    ];
 
     items.push({
       id: `warn-${group.area}-${group.reportDateTime}`,
       category: topCategory,
-      categoryLabel: primaryBadge.label,
+      categoryLabel: '警報・注意報',
       sidebarTitle,
       headlineText,
       subText: namesText,
-      badgeText: group.area,
+      badgeText: '',
       bgColor: primaryBadge.bgColor,
       textColor: primaryBadge.textColor,
       priority: rule.priority,
@@ -225,6 +233,7 @@ export function buildTelopQueue(
       rawType: 'warning',
       rawData: group,
       tickerBadges,
+      inlineBadges,
     });
   }
 
@@ -285,9 +294,8 @@ export function buildTelopQueue(
           tickerBadges: [
             {
               label: '地震情報',
-              subLabel: `最大震度 ${formattedInt}`,
-              bgColor: seismicColor.bg,
-              textColor: seismicColor.text,
+              bgColor: config.areaColors.headerBadge.bgColor,
+              textColor: config.areaColors.headerBadge.textColor,
             },
           ],
         });
@@ -327,11 +335,11 @@ export function buildTelopQueue(
         items.push({
           id: `ty-${ty.tcNumber}`,
           category: 'typhoon',
-          categoryLabel: `台風第${typhoonNum}号`,
+          categoryLabel: '台風情報',
           sidebarTitle: '台風情報',
           headlineText,
           subText: `台風第${typhoonNum}号 ${cur.pressure ? `${cur.pressure}hPa` : ''}`,
-          badgeText: `台風${typhoonNum}号`,
+          badgeText: `台風第${typhoonNum}号`,
           bgColor: '#0284C7',
           textColor: '#FFFFFF',
           priority: tyRule.priority,
@@ -342,10 +350,9 @@ export function buildTelopQueue(
           rawData: ty,
           tickerBadges: [
             {
-              label: `台風第${typhoonNum}号`,
-              subLabel: cur.intensityClass || ty.name || '台風情報',
-              bgColor: '#0284C7',
-              textColor: '#FFFFFF',
+              label: '台風情報',
+              bgColor: config.areaColors.headerBadge.bgColor,
+              textColor: config.areaColors.headerBadge.textColor,
             },
           ],
         });
@@ -375,8 +382,8 @@ export function buildTelopQueue(
           tickerBadges: [
             {
               label: msg.categoryLabel || 'お知らせ',
-              bgColor: msg.color || '#2563EB',
-              textColor: msg.textColor || '#FFFFFF',
+              bgColor: config.areaColors.headerBadge.bgColor,
+              textColor: config.areaColors.headerBadge.textColor,
             },
           ],
         });
@@ -393,33 +400,40 @@ export function buildTelopQueue(
 
 export function getTestPresetItems(presetKey: string, config: LTelopConfig): TelopItem[] {
   const nowIso = new Date().toISOString();
+  const hbBg = config.areaColors.headerBadge.bgColor;
+  const hbText = config.areaColors.headerBadge.textColor;
   switch (presetKey) {
     case 'special_warning':
       return [
         {
           id: 'test-special-warning',
           category: 'special_warning',
-          categoryLabel: '大雨特別警報',
+          categoryLabel: '警報・注意報',
           sidebarTitle: '特別警報',
-          headlineText: '【気象特別警報・テスト】東京都・神奈川県に大雨特別警報・暴風特別警報が発表されています。最大級の警戒をしてください。（気象庁発表）',
-          badgeText: '大雨特別警報',
+          headlineText: '【東京都・神奈川県】大雨特別警報・暴風特別警報',
+          badgeText: '',
           bgColor: config.colors.warningLevels.special.bg,
           textColor: config.colors.warningLevels.special.text,
           priority: 1,
           timestamp: nowIso,
           office: '気象庁発表',
           areaName: '東京都・神奈川県',
-          rawType: 'test',
+          rawType: 'warning',
           tickerBadges: [
             {
+              label: '警報・注意報',
+              bgColor: hbBg,
+              textColor: hbText,
+            },
+          ],
+          inlineBadges: [
+            {
               label: '大雨特別警報',
-              subLabel: '東京都・神奈川県',
               bgColor: config.colors.warningLevels.special.bg,
               textColor: config.colors.warningLevels.special.text,
             },
             {
               label: '暴風特別警報',
-              subLabel: '東京都・神奈川県',
               bgColor: config.colors.warningLevels.special.bg,
               textColor: config.colors.warningLevels.special.text,
             },
@@ -431,33 +445,37 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
         {
           id: 'test-warning',
           category: 'warning',
-          categoryLabel: '大雨警報',
+          categoryLabel: '警報・注意報',
           sidebarTitle: '気象警報',
-          headlineText: '【東京都気象警報・注意報】東京地方では、大雨警報・洪水警報・雷注意報が発表されています。低い土地の浸水や河川の増水に警戒してください。',
-          badgeText: '大雨・洪水警報',
+          headlineText: '【東京都】大雨警報・洪水警報・雷注意報',
+          badgeText: '',
           bgColor: config.colors.warningLevels.warning.bg,
           textColor: config.colors.warningLevels.warning.text,
           priority: 4,
           timestamp: nowIso,
           office: '気象庁発表',
           areaName: '東京都',
-          rawType: 'test',
+          rawType: 'warning',
           tickerBadges: [
             {
+              label: '警報・注意報',
+              bgColor: hbBg,
+              textColor: hbText,
+            },
+          ],
+          inlineBadges: [
+            {
               label: '大雨警報',
-              subLabel: '東京都',
               bgColor: config.colors.warningLevels.warning.bg,
               textColor: config.colors.warningLevels.warning.text,
             },
             {
               label: '洪水警報',
-              subLabel: '東京都',
               bgColor: config.colors.warningLevels.warning.bg,
               textColor: config.colors.warningLevels.warning.text,
             },
             {
               label: '雷注意報',
-              subLabel: '東京都',
               bgColor: config.colors.warningLevels.advisory.bg,
               textColor: config.colors.warningLevels.advisory.text,
             },
@@ -493,9 +511,8 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           tickerBadges: [
             {
               label: '地震情報',
-              subLabel: '最大震度 4',
-              bgColor: c4.bg,
-              textColor: c4.text,
+              bgColor: hbBg,
+              textColor: hbText,
             },
           ],
         },
@@ -530,9 +547,8 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           tickerBadges: [
             {
               label: '地震情報',
-              subLabel: '最大震度 6強',
-              bgColor: c6.bg,
-              textColor: c6.text,
+              bgColor: hbBg,
+              textColor: hbText,
             },
           ],
         },
@@ -543,7 +559,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
         {
           id: 'test-typhoon',
           category: 'typhoon',
-          categoryLabel: '台風第5号',
+          categoryLabel: '台風情報',
           sidebarTitle: '台風情報',
           headlineText: '【台風第5号（マリア）に関する情報】大型で強い台風第5号は、日本の南を北北東へ時速20kmで進んでいます（中心気圧950hPa・最大風速40m/s・最大瞬間風速60m/s）',
           badgeText: '台風第5号',
@@ -603,10 +619,9 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           },
           tickerBadges: [
             {
-              label: '台風第5号',
-              subLabel: '大型・強い',
-              bgColor: '#0284C7',
-              textColor: '#FFFFFF',
+              label: '台風情報',
+              bgColor: hbBg,
+              textColor: hbText,
             },
           ],
         },
@@ -616,7 +631,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
         {
           id: 'test-tsunami',
           category: 'tsunami_warning',
-          categoryLabel: '津波警報',
+          categoryLabel: '津波情報',
           sidebarTitle: '津波警報',
           headlineText: '【津波警報・注意報】沿岸部に津波警報を発表しました。直ちに海岸や河口付近から離れ、高台や避難ビルなど安全な場所へ避難してください。（気象庁発表）',
           badgeText: '津波警報',
@@ -629,10 +644,9 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           rawType: 'test',
           tickerBadges: [
             {
-              label: '津波警報',
-              subLabel: '太平洋沿岸',
-              bgColor: config.colors.tsunami.warning.bg,
-              textColor: config.colors.tsunami.warning.text,
+              label: '津波情報',
+              bgColor: hbBg,
+              textColor: hbText,
             },
           ],
         },
@@ -642,7 +656,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
         {
           id: 'test-volcano',
           category: 'volcano',
-          categoryLabel: '噴火警報',
+          categoryLabel: '噴火情報',
           sidebarTitle: '噴火警報',
           headlineText: '【噴火警報（火口周辺警報）】桜島に火口周辺警報（噴火警戒レベル3、入山規制）が発表されています。大きな噴石や火砕流に警戒してください。（気象庁発表）',
           badgeText: '噴火警戒レベル3',
@@ -655,10 +669,9 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           rawType: 'test',
           tickerBadges: [
             {
-              label: '噴火警報',
-              subLabel: '桜島 レベル3',
-              bgColor: '#D97706',
-              textColor: '#FFFFFF',
+              label: '噴火情報',
+              bgColor: hbBg,
+              textColor: hbText,
             },
           ],
         },
@@ -682,9 +695,8 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           tickerBadges: [
             {
               label: '竜巻注意情報',
-              subLabel: '埼玉県・東京都',
-              bgColor: '#E11D48',
-              textColor: '#FFFFFF',
+              bgColor: hbBg,
+              textColor: hbText,
             },
           ],
         },

@@ -720,6 +720,84 @@ export default function LTelopAdminTool({
                         onChange={e => updateLayoutBox('ticker', { height: Number(e.target.value) })}
                       />
                     </label>
+
+                    <div
+                      style={{
+                        gridColumn: '1 / -1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        paddingTop: '8px',
+                        borderTop: '1px solid #e2e8f0',
+                      }}
+                    >
+                      <span style={{ fontWeight: 700 }}>
+                        下部ティッカー左端（クロスディゾルブ見出し）配色:
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                          背景色
+                          <input
+                            type="color"
+                            value={config.areaColors.headerBadge.bgColor}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                areaColors: {
+                                  ...prev.areaColors,
+                                  headerBadge: { ...prev.areaColors.headerBadge, bgColor: e.target.value },
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                          文字色
+                          <input
+                            type="color"
+                            value={config.areaColors.headerBadge.textColor}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                areaColors: {
+                                  ...prev.areaColors,
+                                  headerBadge: { ...prev.areaColors.headerBadge, textColor: e.target.value },
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <button
+                          onClick={() =>
+                            setConfig(prev => ({
+                              ...prev,
+                              areaColors: {
+                                ...prev.areaColors,
+                                headerBadge: {
+                                  ...prev.areaColors.headerBadge,
+                                  bgColor: '#000000',
+                                  textColor: '#FFFFFF',
+                                },
+                              },
+                            }))
+                          }
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            borderRadius: '4px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#000000',
+                            color: '#FFFFFF',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          黒(#000000)に戻す
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -2285,6 +2363,77 @@ export default function LTelopAdminTool({
                       }
                     />
                   </label>
+                </div>
+              </div>
+
+              {/* 下部ティッカー左端（クロスディゾルブ見出しエリア）配色 */}
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700 }}>
+                  🎨 下部ティッカー左端（情報種類見出し）配色設定
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.84rem' }}>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#475569' }}>
+                    「警報・注意報」「地震情報」「台風情報」などをクロスディゾルブ表示する左端エリアの配色を設定します（デフォルト: 黒 #000000）。
+                  </p>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>背景色 (デフォルト #000000):</span>
+                    <input
+                      type="color"
+                      value={config.areaColors.headerBadge.bgColor}
+                      onChange={e =>
+                        setConfig(prev => ({
+                          ...prev,
+                          areaColors: {
+                            ...prev.areaColors,
+                            headerBadge: { ...prev.areaColors.headerBadge, bgColor: e.target.value },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>文字色 (デフォルト #FFFFFF):</span>
+                    <input
+                      type="color"
+                      value={config.areaColors.headerBadge.textColor}
+                      onChange={e =>
+                        setConfig(prev => ({
+                          ...prev,
+                          areaColors: {
+                            ...prev.areaColors,
+                            headerBadge: { ...prev.areaColors.headerBadge, textColor: e.target.value },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <button
+                    onClick={() =>
+                      setConfig(prev => ({
+                        ...prev,
+                        areaColors: {
+                          ...prev.areaColors,
+                          headerBadge: {
+                            ...prev.areaColors.headerBadge,
+                            bgColor: '#000000',
+                            textColor: '#FFFFFF',
+                          },
+                        },
+                      }))
+                    }
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#000000',
+                      color: '#FFFFFF',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    デフォルト（黒 #000000 / 白文字）に戻す
+                  </button>
                 </div>
               </div>
             </div>

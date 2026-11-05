@@ -165,8 +165,10 @@ export interface TelopItem {
   areaName?: string;
   rawType: 'warning' | 'earthquake' | 'typhoon' | 'test' | 'custom';
   rawData?: any;
-  /** 下部ティッカー左端のクロスディゾルブ表示用バッジ候補（警報ごとの個別名称・色など） */
+  /** 下部ティッカー左端のクロスディゾルブ表示用バッジ候補 */
   tickerBadges?: TickerBadgeInfo[];
+  /** ティッカー本文内でラベル（ピル）として並べて表示する警報リスト */
+  inlineBadges?: TickerBadgeInfo[];
 }
 
 export const ALL_REGIONS = [
@@ -307,7 +309,7 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
       opacity: 0.94,
     },
     headerBadge: {
-      bgColor: '#C41E3A',
+      bgColor: '#000000',
       textColor: '#FFFFFF',
       borderRadius: 6,
     },
@@ -391,6 +393,10 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
     cfg.colors?.warningLevels?.special?.bg?.toUpperCase() === '#8B008B'
       ? '#000000'
       : cfg.colors?.warningLevels?.special?.bg ?? '#000000';
+  const headerBadgeBg =
+    cfg.areaColors?.headerBadge?.bgColor?.toUpperCase() === '#C41E3A'
+      ? '#000000'
+      : cfg.areaColors?.headerBadge?.bgColor ?? '#000000';
   const clampHours = (h: any, fallback = 24) => {
     const n = Number(h);
     if (!Number.isFinite(n)) return fallback;
@@ -411,6 +417,13 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
           ...cfg.colors.warningLevels.special,
           bg: specialBg,
         },
+      },
+    },
+    areaColors: {
+      ...cfg.areaColors,
+      headerBadge: {
+        ...cfg.areaColors.headerBadge,
+        bgColor: headerBadgeBg,
       },
     },
     layout: {
