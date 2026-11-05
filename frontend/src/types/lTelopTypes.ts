@@ -365,10 +365,10 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
       visible: true,
     },
     clock: {
-      x: 1710,
+      x: 1782,
       y: 24,
-      width: 186,
-      height: 54,
+      width: 114,
+      height: 100,
       visible: true,
     },
     attribution: {
@@ -407,6 +407,14 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
     if (!Number.isFinite(n)) return fallback;
     return Math.max(1, Math.min(72, Math.round(n)));
   };
+  const isOldRectClock =
+    cfg.layout?.clock &&
+    cfg.layout.clock.width === 186 &&
+    (cfg.layout.clock.height === 54 || cfg.layout.clock.height === 64);
+  const clockLayout = isOldRectClock
+    ? { ...cfg.layout.clock, x: 1782, y: 24, width: 114, height: 100 }
+    : cfg.layout?.clock;
+
   return {
     ...cfg,
     info: {
@@ -434,6 +442,7 @@ function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
     },
     layout: {
       ...cfg.layout,
+      clock: clockLayout || cfg.layout.clock,
       sidebar: {
         ...cfg.layout.sidebar,
         x: 0,

@@ -1051,33 +1051,104 @@ export default function LTelopOverlay({
       {/* 5. 時計表示 */}
       {renderEditableFrame(
         'clock',
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            background: 'rgba(15, 23, 42, 0.82)',
-            color: '#ffffff',
-            borderRadius: '10px',
-            border: '1.5px solid rgba(255,255,255,0.18)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            padding: '0 14px',
-            boxSizing: 'border-box',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
-          }}
-        >
-          <span style={{ fontSize: '15px', color: '#93c5fd', fontWeight: 700 }}>
-            {now.getMonth() + 1}/{now.getDate()}
-          </span>
-          <span style={{ fontSize: '26px', fontWeight: 900, letterSpacing: '1px', fontFamily: "'Lato', sans-serif" }}>
-            {String(now.getHours()).padStart(2, '0')}:{String(now.getMinutes()).padStart(2, '0')}
-            <span style={{ fontSize: '16px', opacity: 0.8, marginLeft: '2px' }}>
-              :{String(now.getSeconds()).padStart(2, '0')}
-            </span>
-          </span>
-        </div>
+        (() => {
+          const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+          const weekday = WEEKDAYS[now.getDay()];
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const month = now.getMonth() + 1;
+          const date = now.getDate();
+
+          return (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                background: 'rgba(15, 23, 42, 0.88)',
+                color: '#ffffff',
+                borderRadius: '12px',
+                border: '1.5px solid rgba(255,255,255,0.22)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px 8px',
+                boxSizing: 'border-box',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
+                userSelect: 'none',
+              }}
+            >
+              {/* 上段: 時計 (時:分、秒数なし、Open Sans bold 700以上) */}
+              <div
+                style={{
+                  fontFamily: "'Open Sans', 'Lato', sans-serif",
+                  fontWeight: 800,
+                  fontSize: '32px',
+                  lineHeight: 1,
+                  letterSpacing: '0.5px',
+                  color: '#ffffff',
+                  textShadow: '0 2px 8px rgba(0,0,0,0.55)',
+                }}
+              >
+                {hours}:{minutes}
+              </div>
+
+              {/* 区切り線 ----- */}
+              <div
+                style={{
+                  width: '80%',
+                  height: '1px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                  margin: '7px 0 6px 0',
+                }}
+              />
+
+              {/* 下段: 日付(曜日) (数字部分はOpen Sans bold 700以上) */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px',
+                  lineHeight: 1,
+                  fontWeight: 700,
+                  color: '#e2e8f0',
+                  gap: '1px',
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "'Open Sans', 'Lato', sans-serif",
+                    fontWeight: 700,
+                    color: '#ffffff',
+                  }}
+                >
+                  {month}
+                </span>
+                <span style={{ fontSize: '11px', opacity: 0.9 }}>月</span>
+                <span
+                  style={{
+                    fontFamily: "'Open Sans', 'Lato', sans-serif",
+                    fontWeight: 700,
+                    color: '#ffffff',
+                  }}
+                >
+                  {date}
+                </span>
+                <span style={{ fontSize: '11px', opacity: 0.9 }}>日</span>
+                <span
+                  style={{
+                    marginLeft: '2px',
+                    fontSize: '12px',
+                    color: weekday === '日' ? '#f87171' : weekday === '土' ? '#60a5fa' : '#cbd5e1',
+                  }}
+                >
+                  ({weekday})
+                </span>
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {/* 6. 出典表示（R1: 気象庁発表の常時明示） */}
