@@ -22,6 +22,10 @@ export interface LayoutElementConfig {
 }
 
 export interface SidebarLayoutConfig extends LayoutElementConfig {
+  titleText: string;
+  subTitleText: string;
+  titleOffsetX: number; // px offset from center
+  titleOffsetY: number; // px offset from center
   direction: 'vertical' | 'horizontal';
   fontSize: number;
   letterSpacing: number;
@@ -64,6 +68,8 @@ export interface LTelopConfig {
     enableEarthquake: boolean;
     minSeismicIntensity: '1' | '2' | '3' | '4' | '5弱' | '5強' | '6弱' | '6強' | '7';
     maxEarthquakeItems: number;
+    warningMaxAgeHours: number; // 1 - 72 hours
+    earthquakeMaxAgeHours: number; // 1 - 72 hours
     enableTyphoon: boolean;
     enableCustomMessages: boolean;
     regionScope: 'all' | 'regions' | 'prefectures';
@@ -136,6 +142,13 @@ export interface LTelopConfig {
   };
 }
 
+export interface TickerBadgeInfo {
+  label: string;
+  subLabel?: string;
+  bgColor: string;
+  textColor: string;
+}
+
 export interface TelopItem {
   id: string;
   category: TelopCategory;
@@ -152,6 +165,8 @@ export interface TelopItem {
   areaName?: string;
   rawType: 'warning' | 'earthquake' | 'typhoon' | 'test' | 'custom';
   rawData?: any;
+  /** 下部ティッカー左端のクロスディゾルブ表示用バッジ候補（警報ごとの個別名称・色など） */
+  tickerBadges?: TickerBadgeInfo[];
 }
 
 export const ALL_REGIONS = [
@@ -188,8 +203,39 @@ export const REGION_PREFECTURES: Record<string, string[]> = {
   '沖縄': ['沖縄県', '沖縄本島地方', '大東島地方', '宮古島地方', '八重山地方'],
 };
 
+/**
+ * 1920x1080 キャンバス内で、左サイドバーを除いた幅 (1920 - sidebarWidth) と
+ * 下部ティッカーを除いた高さ (1080 - tickerHeight) が常に 16:9 になるように正規化する。
+ * (1920 - W) / (1080 - H) = 16 / 9  <=>  W / H = 16 / 9
+ */
+export function compute16By9LFrame(
+  source: { sidebarWidth?: number; tickerHeight?: number }
+): { sidebarWidth: number; sidebarHeight: number; tickerHeight: number; tickerY: number; innerWidth: number; innerHeight: number } {
+  let tickerHeight: number;
+  if (source.tickerHeight !== undefined) {
+    tickerHeight = Math.max(36, Math.min(270, Math.round(source.tickerHeight)));
+  } else if (source.sidebarWidth !== undefined) {
+    const sw = Math.max(64, Math.min(480, Math.round(source.sidebarWidth)));
+    tickerHeight = Math.round((sw * 9) / 16);
+  } else {
+    tickerHeight = 72;
+  }
+  const sidebarWidth = Math.round((tickerHeight * 16) / 9);
+  const sidebarHeight = 1080 - tickerHeight;
+  const tickerY = 1080 - tickerHeight;
+  return {
+    sidebarWidth,
+    sidebarHeight,
+    tickerHeight,
+    tickerY,
+    innerWidth: 1920 - sidebarWidth,
+    innerHeight: 1080 - tickerHeight,
+  };
+}
+
+// デフォルト: サイドバー幅 128px, 下部ティッカー高さ 72px -> 中の映像画面 1792 x 1008 (正確に 16:9)
 export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
-  version: '1.0',
+  version: '1.1',
   info: {
     enableSpecialWarning: true,
     enableWarning: true,
@@ -197,6 +243,8 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
     enableEarthquake: true,
     minSeismicIntensity: '1',
     maxEarthquakeItems: 3,
+    warningMaxAgeHours: 24,
+    earthquakeMaxAgeHours: 24,
     enableTyphoon: true,
     enableCustomMessages: true,
     regionScope: 'all',
@@ -215,7 +263,7 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
   },
   colors: {
     warningLevels: {
-      special: { bg: '#8B008B', text: '#FFFFFF' },
+      special: { bg: '#000000', text: '#FFFFFF' },
       level4: { bg: '#800080', text: '#FFFFFF' },
       warning: { bg: '#FF2800', text: '#FFFFFF' },
       advisory: { bg: '#FFD700', text: '#1E293B' },
@@ -272,25 +320,29 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
     sidebar: {
       x: 0,
       y: 0,
-      width: 110,
-      height: 1016,
+      width: 128,
+      height: 1008,
       visible: true,
+      titleText: '気象・防災情報',
+      subTitleText: '',
+      titleOffsetX: 0,
+      titleOffsetY: 0,
       direction: 'vertical',
       fontSize: 44,
       letterSpacing: 8,
     },
     ticker: {
       x: 0,
-      y: 1016,
+      y: 1008,
       width: 1920,
-      height: 64,
+      height: 72,
       visible: true,
       fontSize: 30,
       scrollSpeed: 90,
       scrollDirection: 'rtl',
     },
     typhoonMap: {
-      x: 136,
+      x: 152,
       y: 36,
       width: 440,
       height: 360,
@@ -299,7 +351,7 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
       tileType: 'osm',
     },
     earthquakePanel: {
-      x: 136,
+      x: 152,
       y: 416,
       width: 440,
       height: 200,
@@ -314,7 +366,7 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
     },
     attribution: {
       x: 1680,
-      y: 960,
+      y: 948,
       width: 216,
       height: 44,
       visible: true,
@@ -333,14 +385,80 @@ export const DEFAULT_LTELOP_CONFIG: LTelopConfig = {
 
 export const LTELOP_STORAGE_KEY = 'l-telop-config';
 
+function enforce16By9OnConfig(cfg: LTelopConfig): LTelopConfig {
+  const frame = compute16By9LFrame({ tickerHeight: cfg.layout?.ticker?.height ?? 72 });
+  const specialBg =
+    cfg.colors?.warningLevels?.special?.bg?.toUpperCase() === '#8B008B'
+      ? '#000000'
+      : cfg.colors?.warningLevels?.special?.bg ?? '#000000';
+  const clampHours = (h: any, fallback = 24) => {
+    const n = Number(h);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(1, Math.min(72, Math.round(n)));
+  };
+  const specialBg =
+    cfg.colors?.warningLevels?.special?.bg?.toUpperCase() === '#8B008B'
+      ? '#000000'
+      : cfg.colors?.warningLevels?.special?.bg ?? '#000000';
+  const clampHours = (h: any, fallback = 24) => {
+    const n = Number(h);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(1, Math.min(72, Math.round(n)));
+  };
+  return {
+    ...cfg,
+    info: {
+      ...cfg.info,
+      warningMaxAgeHours: clampHours(cfg.info?.warningMaxAgeHours, 24),
+      earthquakeMaxAgeHours: clampHours(cfg.info?.earthquakeMaxAgeHours, 24),
+    },
+    colors: {
+      ...cfg.colors,
+      warningLevels: {
+        ...cfg.colors.warningLevels,
+        special: {
+          ...cfg.colors.warningLevels.special,
+          bg: specialBg,
+        },
+      },
+    },
+    colors: {
+      ...cfg.colors,
+      warningLevels: {
+        ...cfg.colors.warningLevels,
+        special: {
+          ...cfg.colors.warningLevels.special,
+          bg: specialBg,
+        },
+      },
+    },
+    layout: {
+      ...cfg.layout,
+      sidebar: {
+        ...cfg.layout.sidebar,
+        x: 0,
+        y: 0,
+        width: frame.sidebarWidth,
+        height: frame.sidebarHeight,
+      },
+      ticker: {
+        ...cfg.layout.ticker,
+        x: 0,
+        y: frame.tickerY,
+        width: 1920,
+        height: frame.tickerHeight,
+      },
+    },
+  };
+}
+
 export function loadLTelopConfig(): LTelopConfig {
   try {
-    // URLパラメータにcfgが含まれている場合はそれを優先マージ（OBS単体ブラウザ対応）
     const params = new URLSearchParams(window.location.search);
     const cfgParam = params.get('cfg');
     if (cfgParam) {
       const decoded = JSON.parse(decodeURIComponent(atob(cfgParam)));
-      return deepMergeConfig(DEFAULT_LTELOP_CONFIG, decoded);
+      return enforce16By9OnConfig(deepMergeConfig(DEFAULT_LTELOP_CONFIG, decoded));
     }
   } catch {
     // ignore malformed url param
@@ -350,7 +468,7 @@ export function loadLTelopConfig(): LTelopConfig {
     const raw = localStorage.getItem(LTELOP_STORAGE_KEY);
     if (!raw) return DEFAULT_LTELOP_CONFIG;
     const parsed = JSON.parse(raw);
-    return deepMergeConfig(DEFAULT_LTELOP_CONFIG, parsed);
+    return enforce16By9OnConfig(deepMergeConfig(DEFAULT_LTELOP_CONFIG, parsed));
   } catch {
     return DEFAULT_LTELOP_CONFIG;
   }
@@ -366,7 +484,6 @@ export function saveLTelopConfig(config: LTelopConfig): void {
 
 export function encodeConfigForUrl(config: LTelopConfig): string {
   try {
-    // URL長を抑えるため、選択された都道府県が全件の場合は省略した軽量オブジェクトにする
     const compact: Partial<LTelopConfig> = {
       ...config,
       info: {
@@ -388,7 +505,6 @@ function deepMergeConfig(base: any, override: any): any {
     const val = override[key];
     if (val === undefined) continue;
     if (Array.isArray(val)) {
-      // regionScope !== 'prefectures' のときに空配列で上書きされた場合はデフォルト維持
       if (key === 'selectedPrefectures' && val.length === 0 && override.regionScope !== 'prefectures') {
         result[key] = base[key];
       } else {
@@ -402,4 +518,3 @@ function deepMergeConfig(base: any, override: any): any {
   }
   return result;
 }
-

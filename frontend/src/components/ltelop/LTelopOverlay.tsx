@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { drawTyphoon } from '../../utils/drawTyphoon';
 import { formatIntensity } from '../../EarthquakeDetailView';
-import type { LTelopConfig, TelopItem } from '../../types/lTelopTypes';
+import type { LTelopConfig, TelopItem, TickerBadgeInfo } from '../../types/lTelopTypes';
 
 export type LayoutBoxKey =
   | 'sidebar'
@@ -28,13 +28,176 @@ interface LTelopOverlayProps {
 }
 
 const BOX_LABELS: Record<LayoutBoxKey, string> = {
-  sidebar: '左サイドバー',
-  ticker: '下部ティッカー',
+  sidebar: '左サイドバー (16:9連動)',
+  ticker: '下部ティッカー (16:9連動)',
   typhoonMap: '台風MAP',
   earthquakePanel: '地震情報パネル',
   clock: '時計表示',
   attribution: '出典表示',
 };
+
+/**
+ * 下部ティッカー左端の警報・情報種別ボックス（クロスディゾルブ切替）
+ */
+function CrossDissolveTickerBadge({
+  badge,
+  fontSize,
+  width,
+  borderRightWidth,
+  borderRightColor,
+}: {
+  badge: TickerBadgeInfo;
+  fontSize: number;
+  width: number;
+  borderRightWidth: number;
+  borderRightColor: string;
+}) {
+  const [layers, setLayers] = useState<{
+    prev: TickerBadgeInfo | null;
+    current: TickerBadgeInfo;
+    fadingIn: boolean;
+    key: number;
+  }>({
+    prev: null,
+    current: badge,
+    fadingIn: false,
+    key: 0,
+  });
+
+  const badgeSig = `${badge.label}|${badge.subLabel || ''}|${badge.bgColor}|${badge.textColor}`;
+  const lastSigRef = useRef(badgeSig);
+
+  useEffect(() => {
+    if (badgeSig === lastSigRef.current) return;
+    lastSigRef.current = badgeSig;
+
+    setLayers(prevState => ({
+      prev: prevState.current,
+      current: badge,
+      fadingIn: false,
+      key: prevState.key + 1,
+    }));
+
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        setLayers(prevState => ({ ...prevState, fadingIn: true }));
+      });
+      return () => cancelAnimationFrame(raf2);
+    });
+
+    const cleanupTimer = setTimeout(() => {
+      setLayers(prevState => ({ ...prevState, prev: null, fadingIn: true }));
+    }, 680);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      clearTimeout(cleanupTimer);
+    };
+  }, [badgeSig, badge]);
+
+  const renderBadgeContent = (b: TickerBadgeInfo) => {
+    const innerAvailW = Math.max(48, width - 12);
+    const charCount = Math.max(1, (b.label || '').length);
+    const maxFitFont = Math.floor(innerAvailW / charCount);
+    const baseMainFont = Math.round(fontSize * (b.subLabel ? 0.68 : 0.78));
+    const computedMainFont = Math.max(11, Math.min(baseMainFont, maxFitFont));
+    const computedSubFont = Math.max(9, Math.min(Math.round(fontSize * 0.38), Math.floor(innerAvailW / Math.max(4, (b.subLabel || '').length))));
+
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: b.bgColor,
+          color: b.textColor,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 6px',
+          boxSizing: 'border-box',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+        }}
+      >
+        {b.subLabel && (
+          <span
+            style={{
+              fontSize: `${computedSubFont}px`,
+              fontWeight: 800,
+              lineHeight: 1.1,
+              opacity: 0.92,
+              marginBottom: '2px',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {b.subLabel}
+          </span>
+        )}
+        <span
+          style={{
+            fontSize: `${computedMainFont}px`,
+            fontWeight: 900,
+            lineHeight: 1.15,
+            letterSpacing: '0px',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {b.label}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        zIndex: 5,
+        height: '100%',
+        width: `${width}px`,
+        borderRight: borderRightWidth > 0 ? `${borderRightWidth}px solid ${borderRightColor}` : 'none',
+        boxSizing: 'border-box',
+        position: 'relative',
+        boxShadow: '4px 0 12px rgba(0,0,0,0.45)',
+        flexShrink: 0,
+        overflow: 'hidden',
+      }}
+    >
+      {/* 前の表示（クロスディゾルブでフェードアウト） */}
+      {layers.prev && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            opacity: layers.fadingIn ? 0 : 1,
+            transition: 'opacity 0.65s cubic-bezier(0.4, 0, 0.2, 1)',
+            willChange: 'opacity',
+          }}
+        >
+          {renderBadgeContent(layers.prev)}
+        </div>
+      )}
+
+      {/* 現在の表示（クロスディゾルブでフェードイン） */}
+      <div
+        key={layers.key}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: layers.prev ? (layers.fadingIn ? 1 : 0) : 1,
+          transition: layers.prev ? 'opacity 0.65s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+          willChange: 'opacity',
+        }}
+      >
+        {renderBadgeContent(layers.current)}
+      </div>
+    </div>
+  );
+}
 
 export default function LTelopOverlay({
   config,
@@ -49,7 +212,6 @@ export default function LTelopOverlay({
   snapGrid = true,
   showSafeArea = false,
 }: LTelopOverlayProps) {
-  const topItem = items[0] || null;
   const activeTyphoonItem = items.find(i => i.rawType === 'typhoon' && i.rawData);
   const activeEarthquakeItem = items.find(i => i.rawType === 'earthquake' && i.rawData);
 
@@ -60,8 +222,55 @@ export default function LTelopOverlay({
     return () => clearInterval(id);
   }, []);
 
-  // ティッカー60fps requestAnimationFrame スクロール
+  // ティッカー内で現在読まれているアイテムのインデックス & サブ警報サイクルインデックス
+  const [activeTickerItemIdx, setActiveTickerItemIdx] = useState(0);
+  const [subBadgeCycleIdx, setSubBadgeCycleIdx] = useState(0);
+  const activeItemIdxRef = useRef(0);
+  const itemSpanRefs = useRef<(HTMLSpanElement | null)[]>([]);
+
+  // 3.2秒ごとに警報バッジ（複数警報がある場合や複数アイテム待機時）をサイクルしてクロスディゾルブ切替
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSubBadgeCycleIdx(c => c + 1);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 現在表示すべき下部ティッカー左端のバッジ情報を算出
+  const currentTickerBadge = useMemo<TickerBadgeInfo>(() => {
+    if (items.length === 0) {
+      return {
+        label: '防災・気象情報',
+        subLabel: '気象庁発表',
+        bgColor: config.areaColors.headerBadge.bgColor,
+        textColor: config.areaColors.headerBadge.textColor,
+      };
+    }
+
+    const safeItemIdx = activeTickerItemIdx < items.length ? activeTickerItemIdx : 0;
+    const currentItem = items[safeItemIdx] || items[0];
+
+    // 現在スクロール中のアイテムに複数の警報バッジ（例：大雨警報・洪水警報・雷注意報）がある場合はそれを順にクロスディゾルブ
+    if (currentItem.tickerBadges && currentItem.tickerBadges.length > 1) {
+      return currentItem.tickerBadges[subBadgeCycleIdx % currentItem.tickerBadges.length];
+    }
+
+    // 単一バッジのアイテムが複数ある場合は、スクロール位置のアイテムのバッジを表示
+    if (currentItem.tickerBadges && currentItem.tickerBadges.length === 1) {
+      return currentItem.tickerBadges[0];
+    }
+
+    return {
+      label: currentItem.categoryLabel,
+      subLabel: currentItem.areaName,
+      bgColor: currentItem.bgColor,
+      textColor: currentItem.textColor,
+    };
+  }, [items, activeTickerItemIdx, subBadgeCycleIdx, config.areaColors.headerBadge]);
+
+  // ティッカー60fps requestAnimationFrame スクロール & 現在通過中のアイテム検知
   const tickerContainerRef = useRef<HTMLDivElement>(null);
+  const tickerViewportRef = useRef<HTMLDivElement>(null);
   const tickerTrackRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef<number>(0);
 
@@ -71,11 +280,11 @@ export default function LTelopOverlay({
     let animId: number;
     let lastTime = performance.now();
 
-    const containerEl = tickerContainerRef.current;
+    const viewportEl = tickerViewportRef.current;
     const trackEl = tickerTrackRef.current;
-    if (!containerEl || !trackEl) return;
+    if (!viewportEl || !trackEl) return;
 
-    const containerWidth = containerEl.clientWidth || 1600;
+    const containerWidth = viewportEl.clientWidth || 1600;
     const dir = config.layout.ticker.scrollDirection;
     offsetRef.current = dir === 'rtl' ? containerWidth : -trackEl.scrollWidth;
 
@@ -84,7 +293,7 @@ export default function LTelopOverlay({
       lastTime = time;
       const speed = Math.max(20, config.layout.ticker.scrollSpeed || 80);
       const trackWidth = trackEl.scrollWidth || 800;
-      const cw = containerEl.clientWidth || 1600;
+      const cw = viewportEl.clientWidth || 1600;
 
       if (dir === 'rtl') {
         offsetRef.current -= speed * dt;
@@ -99,12 +308,50 @@ export default function LTelopOverlay({
       }
 
       trackEl.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
+
+      // スクロール位置から現在ティッカー左側の読み取りゾーンにあるアイテムを特定し、左端ラベルを同期切替
+      if (items.length > 0) {
+        const readZoneX = cw * 0.25;
+        let matchedIdx = -1;
+        for (let i = 0; i < items.length; i++) {
+          const el = itemSpanRefs.current[i];
+          if (!el) continue;
+          const itemStart = offsetRef.current + el.offsetLeft;
+          const itemEnd = itemStart + el.offsetWidth + 64;
+          if (itemStart <= readZoneX && itemEnd >= 0) {
+            matchedIdx = i;
+            break;
+          }
+        }
+        if (matchedIdx === -1) {
+          // まだ右端から入ってきたばかりの先頭アイテムを探す
+          for (let i = 0; i < items.length; i++) {
+            const el = itemSpanRefs.current[i];
+            if (!el) continue;
+            const itemStart = offsetRef.current + el.offsetLeft;
+            if (itemStart <= cw && itemStart + el.offsetWidth >= 0) {
+              matchedIdx = i;
+              break;
+            }
+          }
+        }
+        if (matchedIdx !== -1 && matchedIdx !== activeItemIdxRef.current) {
+          activeItemIdxRef.current = matchedIdx;
+          setActiveTickerItemIdx(matchedIdx);
+        }
+      }
+
       animId = requestAnimationFrame(step);
     };
 
     animId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(animId);
-  }, [tickerTextSignature, config.layout.ticker.scrollSpeed, config.layout.ticker.scrollDirection]);
+  }, [
+    tickerTextSignature,
+    items.length,
+    config.layout.ticker.scrollSpeed,
+    config.layout.ticker.scrollDirection,
+  ]);
 
   // 台風ミニマップ描画 (Leaflet)
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -205,6 +452,8 @@ export default function LTelopOverlay({
     onSelectBox?.(key);
     const box = config.layout[key];
     if (box.locked) return;
+    // 左サイドバーと下部ティッカーは16:9枠として固定位置のため移動(move)は無効化し、選択とリサイズのみ許可
+    if ((key === 'sidebar' || key === 'ticker') && mode === 'move') return;
 
     dragStateRef.current = {
       key,
@@ -231,9 +480,18 @@ export default function LTelopOverlay({
       const nextY = Math.max(0, Math.min(1080 - st.origH, snap(st.origY + dy)));
       onUpdateBox(st.key, { x: nextX, y: nextY });
     } else {
-      const nextW = Math.max(60, Math.min(1920 - st.origX, snap(st.origW + dx)));
-      const nextH = Math.max(36, Math.min(1080 - st.origY, snap(st.origH + dy)));
-      onUpdateBox(st.key, { width: nextW, height: nextH });
+      if (st.key === 'sidebar') {
+        const nextW = Math.max(64, Math.min(480, Math.round(st.origW + dx)));
+        onUpdateBox('sidebar', { width: nextW });
+      } else if (st.key === 'ticker') {
+        // 下部ティッカーのリサイズハンドルは上下ドラッグで高さを変更可能に
+        const nextH = Math.max(36, Math.min(270, Math.round(st.origH - dy)));
+        onUpdateBox('ticker', { height: nextH });
+      } else {
+        const nextW = Math.max(60, Math.min(1920 - st.origX, snap(st.origW + dx)));
+        const nextH = Math.max(36, Math.min(1080 - st.origY, snap(st.origH + dy)));
+        onUpdateBox(st.key, { width: nextW, height: nextH });
+      }
     }
   };
 
@@ -246,6 +504,7 @@ export default function LTelopOverlay({
     if (!box.visible && !editableLayout) return null;
 
     const isSelected = editableLayout && selectedBox === key;
+    const isLFrame = key === 'sidebar' || key === 'ticker';
 
     return (
       <div
@@ -260,13 +519,13 @@ export default function LTelopOverlay({
           width: `${box.width}px`,
           height: `${box.height}px`,
           opacity: box.visible ? 1 : 0.35,
-          cursor: editableLayout ? (box.locked ? 'not-allowed' : 'move') : 'default',
+          cursor: editableLayout ? (isLFrame ? 'pointer' : box.locked ? 'not-allowed' : 'move') : 'default',
           outline: editableLayout
             ? isSelected
               ? '3px solid #38bdf8'
               : '1.5px dashed rgba(255,255,255,0.55)'
             : 'none',
-          zIndex: isSelected ? 50 : key === 'ticker' || key === 'sidebar' ? 20 : 30,
+          zIndex: isSelected ? 50 : isLFrame ? 20 : 30,
           boxSizing: 'border-box',
           userSelect: 'none',
         }}
@@ -277,19 +536,20 @@ export default function LTelopOverlay({
             <div
               style={{
                 position: 'absolute',
-                top: '-24px',
-                left: 0,
+                top: key === 'sidebar' ? '6px' : '-24px',
+                left: key === 'sidebar' ? '6px' : 0,
                 background: isSelected ? '#0284c7' : 'rgba(15,23,42,0.85)',
                 color: '#fff',
                 fontSize: '12px',
                 fontWeight: 700,
                 padding: '2px 8px',
-                borderRadius: '4px 4px 0 0',
+                borderRadius: '4px',
                 whiteSpace: 'nowrap',
                 pointerEvents: 'none',
+                zIndex: 65,
               }}
             >
-              {BOX_LABELS[key]} ({box.x}, {box.y} / {box.width}×{box.height})
+              {BOX_LABELS[key]} ({box.width}×{box.height})
               {!box.visible ? ' [非表示]' : ''}
             </div>
             {!box.locked && (
@@ -297,17 +557,22 @@ export default function LTelopOverlay({
                 onPointerDown={e => handlePointerDown(e, key, 'resize')}
                 style={{
                   position: 'absolute',
-                  right: '-6px',
-                  bottom: '-6px',
+                  right: key === 'ticker' ? '24px' : '-6px',
+                  top: key === 'ticker' ? '-8px' : undefined,
+                  bottom: key === 'ticker' ? undefined : '-6px',
                   width: '18px',
                   height: '18px',
                   backgroundColor: '#38bdf8',
                   border: '2px solid #ffffff',
                   borderRadius: '4px',
-                  cursor: 'nwse-resize',
+                  cursor: key === 'sidebar' ? 'ew-resize' : key === 'ticker' ? 'ns-resize' : 'nwse-resize',
                   zIndex: 60,
                 }}
-                title="ドラッグしてサイズ変更"
+                title={
+                  isLFrame
+                    ? 'ドラッグしてサイズ変更（中の画面16:9比率を自動維持）'
+                    : 'ドラッグしてサイズ変更'
+                }
               />
             )}
           </>
@@ -345,8 +610,8 @@ export default function LTelopOverlay({
 
   const sbColor = config.areaColors.sidebar;
   const tkColor = config.areaColors.ticker;
-  const hbColor = config.areaColors.headerBadge;
-  const sidebarTitleText = topItem ? topItem.sidebarTitle : '気象情報';
+  const innerWidth = 1920 - config.layout.sidebar.width;
+  const innerHeight = 1080 - config.layout.ticker.height;
 
   return (
     <div
@@ -367,27 +632,32 @@ export default function LTelopOverlay({
         ...getCanvasBackground(),
       }}
     >
-      {/* サンプル配信映像プレースホルダー表示 */}
-      {!isObs && backgroundMode === 'sample_stream' && (
+      {/* 中の画面（16:9 映像表示エリア）プレースホルダー */}
+      {!isObs && (backgroundMode === 'sample_stream' || editableLayout) && (
         <div
           style={{
             position: 'absolute',
-            inset: 0,
+            left: `${config.layout.sidebar.width}px`,
+            top: 0,
+            width: `${innerWidth}px`,
+            height: `${innerHeight}px`,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'rgba(255,255,255,0.18)',
+            color: 'rgba(255,255,255,0.22)',
+            border: editableLayout ? '2px dashed rgba(56, 189, 248, 0.5)' : 'none',
+            boxSizing: 'border-box',
             pointerEvents: 'none',
             zIndex: 1,
           }}
         >
-          <i className="fa-solid fa-video" style={{ fontSize: '96px', marginBottom: '20px' }}></i>
-          <div style={{ fontSize: '36px', fontWeight: 700, letterSpacing: '4px' }}>
-            OBS 配信映像エリア (1920 × 1080)
+          <i className="fa-solid fa-video" style={{ fontSize: '84px', marginBottom: '16px' }}></i>
+          <div style={{ fontSize: '34px', fontWeight: 800, letterSpacing: '3px' }}>
+            映像表示エリア ({innerWidth} × {innerHeight} px / 16:9 比率維持)
           </div>
-          <div style={{ fontSize: '20px', marginTop: '8px' }}>
-            本番のOBSブラウザソースではこの背景が完全透過されます
+          <div style={{ fontSize: '19px', marginTop: '8px' }}>
+            本番のOBSブラウザソースではこの領域が完全透過されます
           </div>
         </div>
       )}
@@ -432,7 +702,7 @@ export default function LTelopOverlay({
         </>
       )}
 
-      {/* 1. 左サイドバー */}
+      {/* 1. 左サイドバー（タイトル専用表示エリア・文字と位置を自由に調整可能） */}
       {renderEditableFrame(
         'sidebar',
         <div
@@ -451,95 +721,60 @@ export default function LTelopOverlay({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'center',
             padding: '16px 8px',
             boxSizing: 'border-box',
             boxShadow: '4px 0 20px rgba(0,0,0,0.45)',
+            overflow: 'hidden',
+            position: 'relative',
           }}
         >
-          {/* サイドバー上部ヘッダ */}
+          {/* ユーザー設定タイトル & 位置オフセット */}
           <div
             style={{
-              backgroundColor: topItem ? topItem.bgColor : hbColor.bgColor,
-              color: topItem ? topItem.textColor : hbColor.textColor,
-              borderRadius: `${hbColor.borderRadius}px`,
-              padding: '8px 6px',
-              width: '100%',
-              textAlign: 'center',
-              fontWeight: 900,
-              fontSize: '15px',
-              letterSpacing: '1px',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
-              boxSizing: 'border-box',
-            }}
-          >
-            {topItem ? topItem.categoryLabel : '防災情報'}
-          </div>
-
-          {/* メイン縦書き/横書きカテゴリタイトル */}
-          <div
-            style={{
-              writingMode:
-                config.layout.sidebar.direction === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
-              textOrientation: 'upright',
-              fontSize: `${config.layout.sidebar.fontSize}px`,
-              fontWeight: 900,
-              letterSpacing: `${config.layout.sidebar.letterSpacing}px`,
-              lineHeight: 1.15,
-              textShadow: '0 3px 8px rgba(0,0,0,0.55)',
+              transform: `translate3d(${config.layout.sidebar.titleOffsetX || 0}px, ${config.layout.sidebar.titleOffsetY || 0}px, 0)`,
               display: 'flex',
+              flexDirection: config.layout.sidebar.direction === 'vertical' ? 'row-reverse' : 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              flex: 1,
-              margin: '12px 0',
+              gap: '10px',
             }}
           >
-            {sidebarTitleText}
-          </div>
-
-          {/* サイドバー下部：上位バッジ一覧 */}
-          <div
-            style={{
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              alignItems: 'center',
-            }}
-          >
-            {items.slice(0, 3).map(item => (
-              <div
-                key={item.id}
-                style={{
-                  width: '100%',
-                  backgroundColor: item.bgColor,
-                  color: item.textColor,
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  padding: '5px 4px',
-                  borderRadius: '4px',
-                  textAlign: 'center',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  boxSizing: 'border-box',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                }}
-              >
-                {item.badgeText || item.areaName || item.categoryLabel}
-              </div>
-            ))}
             <div
               style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                color: 'rgba(255,255,255,0.85)',
-                marginTop: '4px',
+                writingMode:
+                  config.layout.sidebar.direction === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+                textOrientation: 'upright',
+                fontSize: `${config.layout.sidebar.fontSize}px`,
+                fontWeight: 900,
+                letterSpacing: `${config.layout.sidebar.letterSpacing}px`,
+                lineHeight: 1.2,
+                textShadow: '0 3px 8px rgba(0,0,0,0.55)',
+                whiteSpace: 'pre-wrap',
                 textAlign: 'center',
               }}
             >
-              気象庁発表
+              {config.layout.sidebar.titleText || '気象・防災情報'}
             </div>
+
+            {config.layout.sidebar.subTitleText && (
+              <div
+                style={{
+                  writingMode:
+                    config.layout.sidebar.direction === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+                  textOrientation: 'upright',
+                  fontSize: `${Math.max(14, Math.round(config.layout.sidebar.fontSize * 0.45))}px`,
+                  fontWeight: 700,
+                  letterSpacing: '2px',
+                  opacity: 0.9,
+                  textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                  whiteSpace: 'pre-wrap',
+                  textAlign: 'center',
+                }}
+              >
+                {config.layout.sidebar.subTitleText}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -569,29 +804,18 @@ export default function LTelopOverlay({
             boxShadow: '0 -4px 20px rgba(0,0,0,0.5)',
           }}
         >
-          {/* 左端カテゴリ固定ラベル */}
-          <div
-            style={{
-              zIndex: 5,
-              height: '100%',
-              padding: '0 22px',
-              backgroundColor: topItem ? topItem.bgColor : hbColor.bgColor,
-              color: topItem ? topItem.textColor : hbColor.textColor,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 900,
-              fontSize: `${Math.max(18, Math.round(config.layout.ticker.fontSize * 0.82))}px`,
-              whiteSpace: 'nowrap',
-              boxShadow: '4px 0 12px rgba(0,0,0,0.4)',
-              flexShrink: 0,
-            }}
-          >
-            {topItem ? topItem.categoryLabel : '気象庁 防災情報'}
-          </div>
+          {/* 左端：左サイドバーと同じ幅で、警報・情報内容に合わせてクロスディゾルブで切り替わるラベルボックス */}
+          <CrossDissolveTickerBadge
+            badge={currentTickerBadge}
+            fontSize={config.layout.ticker.fontSize}
+            width={config.layout.sidebar.width}
+            borderRightWidth={sbColor.borderRightWidth}
+            borderRightColor={sbColor.borderRightColor}
+          />
 
           {/* スクロールトラック */}
           <div
+            ref={tickerViewportRef}
             style={{
               flex: 1,
               height: '100%',
@@ -615,9 +839,12 @@ export default function LTelopOverlay({
               }}
             >
               {items.length > 0 ? (
-                items.map(item => (
+                items.map((item, idx) => (
                   <span
                     key={item.id}
+                    ref={el => {
+                      itemSpanRefs.current[idx] = el;
+                    }}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -826,4 +1053,3 @@ export default function LTelopOverlay({
     </div>
   );
 }
-

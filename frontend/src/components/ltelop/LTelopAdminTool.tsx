@@ -4,6 +4,7 @@ import {
   ALL_REGIONS,
   DEFAULT_LTELOP_CONFIG,
   REGION_PREFECTURES,
+  compute16By9LFrame,
   encodeConfigForUrl,
   loadLTelopConfig,
   saveLTelopConfig,
@@ -126,16 +127,65 @@ export default function LTelopAdminTool({
     key: LayoutBoxKey,
     patch: { x?: number; y?: number; width?: number; height?: number }
   ) => {
-    setConfig(prev => ({
-      ...prev,
-      layout: {
-        ...prev.layout,
-        [key]: {
-          ...prev.layout[key],
-          ...patch,
+    setConfig(prev => {
+      // 左サイドバーまたは下部ティッカーのサイズ変更時は、中の映像画面が必ず16:9になるよう連動更新
+      if (key === 'sidebar' && patch.width !== undefined) {
+        const frame = compute16By9LFrame({ sidebarWidth: patch.width });
+        return {
+          ...prev,
+          layout: {
+            ...prev.layout,
+            sidebar: {
+              ...prev.layout.sidebar,
+              x: 0,
+              y: 0,
+              width: frame.sidebarWidth,
+              height: frame.sidebarHeight,
+            },
+            ticker: {
+              ...prev.layout.ticker,
+              x: 0,
+              y: frame.tickerY,
+              width: 1920,
+              height: frame.tickerHeight,
+            },
+          },
+        };
+      }
+      if (key === 'ticker' && patch.height !== undefined) {
+        const frame = compute16By9LFrame({ tickerHeight: patch.height });
+        return {
+          ...prev,
+          layout: {
+            ...prev.layout,
+            sidebar: {
+              ...prev.layout.sidebar,
+              x: 0,
+              y: 0,
+              width: frame.sidebarWidth,
+              height: frame.sidebarHeight,
+            },
+            ticker: {
+              ...prev.layout.ticker,
+              x: 0,
+              y: frame.tickerY,
+              width: 1920,
+              height: frame.tickerHeight,
+            },
+          },
+        };
+      }
+      return {
+        ...prev,
+        layout: {
+          ...prev.layout,
+          [key]: {
+            ...prev.layout[key],
+            ...patch,
+          },
         },
-      },
-    }));
+      };
+    });
   };
 
   const applyColorPreset = (preset: 'jma' | 'high_contrast' | 'dark') => {
@@ -543,6 +593,246 @@ export default function LTelopAdminTool({
                 />
               </div>
 
+              {/* 左サイドバータイトル設定 & 16:9 L字サイズ調整 & 1h〜72h 時間フィルタ（プレビュー直下クイック調整） */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                  gap: '16px',
+                }}
+              >
+                {/* 左サイドバー タイトル文字・位置 & 16:9枠サイズ */}
+                <div
+                  style={{
+                    padding: '16px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '6px' }}>
+                    <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
+                      🏷️ 左サイドバー タイトル文字・位置 & 16:9枠調整
+                    </h3>
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: '#dbeafe',
+                        color: '#1e40af',
+                      }}
+                    >
+                      中の画面: {1920 - config.layout.sidebar.width}×{1080 - config.layout.ticker.height}px (16:9)
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.8rem' }}>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 600 }}>
+                      タイトル文字（左サイドバー）
+                      <input
+                        type="text"
+                        value={config.layout.sidebar.titleText}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            layout: {
+                              ...prev.layout,
+                              sidebar: { ...prev.layout.sidebar, titleText: e.target.value },
+                            },
+                          }))
+                        }
+                        placeholder="例: 気象・防災情報"
+                        style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
+                      />
+                    </label>
+
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 600 }}>
+                      サブタイトル（任意）
+                      <input
+                        type="text"
+                        value={config.layout.sidebar.subTitleText || ''}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            layout: {
+                              ...prev.layout,
+                              sidebar: { ...prev.layout.sidebar, subTitleText: e.target.value },
+                            },
+                          }))
+                        }
+                        placeholder="例: 気象庁発表"
+                        style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
+                      />
+                    </label>
+
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 600 }}>
+                      <span>タイトル左右位置 X ({config.layout.sidebar.titleOffsetX || 0}px)</span>
+                      <input
+                        type="range"
+                        min={-120}
+                        max={120}
+                        step={2}
+                        value={config.layout.sidebar.titleOffsetX || 0}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            layout: {
+                              ...prev.layout,
+                              sidebar: { ...prev.layout.sidebar, titleOffsetX: Number(e.target.value) },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 600 }}>
+                      <span>タイトル上下位置 Y ({config.layout.sidebar.titleOffsetY || 0}px)</span>
+                      <input
+                        type="range"
+                        min={-420}
+                        max={420}
+                        step={4}
+                        value={config.layout.sidebar.titleOffsetY || 0}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            layout: {
+                              ...prev.layout,
+                              sidebar: { ...prev.layout.sidebar, titleOffsetY: Number(e.target.value) },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 600 }}>
+                      <span>
+                        L字枠サイズ（16:9連動）: サイドバー幅 {config.layout.sidebar.width}px / 下部ティッカー高さ {config.layout.ticker.height}px
+                      </span>
+                      <input
+                        type="range"
+                        min={45}
+                        max={180}
+                        step={9}
+                        value={config.layout.ticker.height}
+                        onChange={e => updateLayoutBox('ticker', { height: Number(e.target.value) })}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* 地震・警報の最新1時間〜72時間 表示期間フィルタ */}
+                <div
+                  style={{
+                    padding: '16px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                  }}
+                >
+                  <h3 style={{ margin: '0 0 10px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
+                    ⏱️ 地震・警報の表示期間フィルタ（最新 1時間 〜 72時間）
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.82rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', fontWeight: 700 }}>
+                        <span>⚠️ 気象警報・注意報の表示範囲:</span>
+                        <span style={{ color: '#2563eb' }}>最新 {config.info.warningMaxAgeHours} 時間以内</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={72}
+                        step={1}
+                        value={config.info.warningMaxAgeHours}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            info: { ...prev.info, warningMaxAgeHours: Number(e.target.value) },
+                          }))
+                        }
+                        style={{ width: '100%' }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                        {[1, 3, 6, 12, 24, 48, 72].map(h => (
+                          <button
+                            key={h}
+                            onClick={() =>
+                              setConfig(prev => ({
+                                ...prev,
+                                info: { ...prev.info, warningMaxAgeHours: h },
+                              }))
+                            }
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              borderRadius: '4px',
+                              border: '1px solid',
+                              borderColor: config.info.warningMaxAgeHours === h ? '#2563eb' : '#cbd5e1',
+                              backgroundColor: config.info.warningMaxAgeHours === h ? '#eff6ff' : '#fff',
+                              color: config.info.warningMaxAgeHours === h ? '#1d4ed8' : '#475569',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {h}時間
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', fontWeight: 700 }}>
+                        <span>🔵 地震情報の表示範囲:</span>
+                        <span style={{ color: '#2563eb' }}>最新 {config.info.earthquakeMaxAgeHours} 時間以内</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={72}
+                        step={1}
+                        value={config.info.earthquakeMaxAgeHours}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            info: { ...prev.info, earthquakeMaxAgeHours: Number(e.target.value) },
+                          }))
+                        }
+                        style={{ width: '100%' }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                        {[1, 3, 6, 12, 24, 48, 72].map(h => (
+                          <button
+                            key={h}
+                            onClick={() =>
+                              setConfig(prev => ({
+                                ...prev,
+                                info: { ...prev.info, earthquakeMaxAgeHours: h },
+                              }))
+                            }
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              borderRadius: '4px',
+                              border: '1px solid',
+                              borderColor: config.info.earthquakeMaxAgeHours === h ? '#2563eb' : '#cbd5e1',
+                              backgroundColor: config.info.earthquakeMaxAgeHours === h ? '#eff6ff' : '#fff',
+                              color: config.info.earthquakeMaxAgeHours === h ? '#1d4ed8' : '#475569',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {h}時間
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* テストデータワンクリック送信 & カスタムテロップ送信 */}
               <div
                 style={{
@@ -938,6 +1228,87 @@ export default function LTelopAdminTool({
                         </option>
                       ))}
                     </select>
+                  </div>
+                </div>
+
+                {/* 最新 1時間〜72時間 の表示期間フィルタ */}
+                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                  <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.84rem', fontWeight: 700 }}>
+                      <span>⚠️ 気象警報・注意報の表示期間 (1〜72時間)</span>
+                      <span style={{ color: '#2563eb' }}>最新 {config.info.warningMaxAgeHours} 時間</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input
+                        type="range"
+                        min={1}
+                        max={72}
+                        step={1}
+                        value={config.info.warningMaxAgeHours}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            info: { ...prev.info, warningMaxAgeHours: Number(e.target.value) },
+                          }))
+                        }
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={72}
+                        value={config.info.warningMaxAgeHours}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            info: {
+                              ...prev.info,
+                              warningMaxAgeHours: Math.max(1, Math.min(72, Number(e.target.value) || 1)),
+                            },
+                          }))
+                        }
+                        style={{ width: '56px', padding: '4px 6px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.84rem', fontWeight: 700 }}>
+                      <span>🔵 地震情報の表示期間 (1〜72時間)</span>
+                      <span style={{ color: '#2563eb' }}>最新 {config.info.earthquakeMaxAgeHours} 時間</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input
+                        type="range"
+                        min={1}
+                        max={72}
+                        step={1}
+                        value={config.info.earthquakeMaxAgeHours}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            info: { ...prev.info, earthquakeMaxAgeHours: Number(e.target.value) },
+                          }))
+                        }
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={72}
+                        value={config.info.earthquakeMaxAgeHours}
+                        onChange={e =>
+                          setConfig(prev => ({
+                            ...prev,
+                            info: {
+                              ...prev.info,
+                              earthquakeMaxAgeHours: Math.max(1, Math.min(72, Number(e.target.value) || 1)),
+                            },
+                          }))
+                        }
+                        style={{ width: '56px', padding: '4px 6px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1364,6 +1735,76 @@ export default function LTelopAdminTool({
 
                     {selectedBox === 'sidebar' && (
                       <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                        <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          タイトル文字列（左サイドバー表示）
+                          <input
+                            type="text"
+                            value={config.layout.sidebar.titleText}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  sidebar: { ...prev.layout.sidebar, titleText: e.target.value },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          />
+                        </label>
+                        <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          サブタイトル文字列（任意）
+                          <input
+                            type="text"
+                            value={config.layout.sidebar.subTitleText || ''}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  sidebar: { ...prev.layout.sidebar, subTitleText: e.target.value },
+                                },
+                              }))
+                            }
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          />
+                        </label>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          タイトル左右位置 X ({config.layout.sidebar.titleOffsetX || 0}px)
+                          <input
+                            type="range"
+                            min={-120}
+                            max={120}
+                            value={config.layout.sidebar.titleOffsetX || 0}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  sidebar: { ...prev.layout.sidebar, titleOffsetX: Number(e.target.value) },
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          タイトル上下位置 Y ({config.layout.sidebar.titleOffsetY || 0}px)
+                          <input
+                            type="range"
+                            min={-420}
+                            max={420}
+                            value={config.layout.sidebar.titleOffsetY || 0}
+                            onChange={e =>
+                              setConfig(prev => ({
+                                ...prev,
+                                layout: {
+                                  ...prev.layout,
+                                  sidebar: { ...prev.layout.sidebar, titleOffsetY: Number(e.target.value) },
+                                },
+                              }))
+                            }
+                          />
+                        </label>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
                           文字方向
                           <select

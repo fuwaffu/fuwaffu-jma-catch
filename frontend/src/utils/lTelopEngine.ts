@@ -4,6 +4,7 @@ import {
   type LTelopConfig,
   type TelopCategory,
   type TelopItem,
+  type TickerBadgeInfo,
   REGION_PREFECTURES,
 } from '../types/lTelopTypes';
 
@@ -67,6 +68,33 @@ function isWithinDuration(timestampStr: string | undefined, durationSec: number)
   return Date.now() - ts <= durationSec * 1000;
 }
 
+function isWithinHours(timestampStr: string | undefined, maxAgeHours: number | undefined): boolean {
+  if (!timestampStr) return true;
+  const hours = Math.max(1, Math.min(72, Number(maxAgeHours) || 24));
+  const ts = new Date(timestampStr).getTime();
+  if (isNaN(ts)) return true;
+  return Date.now() - ts <= hours * 3600 * 1000;
+}
+
+function getWarningEntryColor(level: string, config: LTelopConfig): { bg: string; text: string } {
+  if (level === 'level_5' || level === 'special') return config.colors.warningLevels.special;
+  if (level === 'level_4') return config.colors.warningLevels.level4;
+  if (level === 'level_3' || level === 'warning') return config.colors.warningLevels.warning;
+  return config.colors.warningLevels.advisory;
+}
+
+function getWarningEntryPriorityRank(level: string): number {
+  if (level === 'level_5' || level === 'special') return 0;
+  if (level === 'level_4') return 1;
+  if (level === 'level_3' || level === 'warning') return 2;
+  return 3;
+}
+
+function cleanWarningLabel(rawName: string): string {
+  if (!rawName) return '気象警報';
+  return rawName.replace(/^レベル[１-５1-5]\s*/, '').trim() || rawName;
+}
+
 export function buildTelopQueue(
   warnings: any[],
   earthquakes: any[],
@@ -81,17 +109,18 @@ export function buildTelopQueue(
 
   const items: TelopItem[] = [];
 
-  // 1. 気象特別警報・警報・注意報（DBの都道府県単位データを優先集約、なければ地域単位）
+  // 1. 気象特別警報・警報・注意報
   const validWarnings = (Array.isArray(warnings) ? warnings : []).filter(w => {
-    // R1: Statusが「通常」以外（訓練・試験）は除外、InfoTypeが「取消」は即座に除外
     if (w.status && w.status !== '通常') return false;
     if (w.infoType === '取消') return false;
     return true;
   });
 
-  // 都道府県または一次細分区域ごとに最新発表分を集約（訂正・更新時は最新reportDateTimeで上書き）
   const prefWarnings = validWarnings.filter(w => w.areaType === 'prefecture');
-  const sourceWarnings = prefWarnings.length > 0 ? prefWarnings : validWarnings.filter(w => w.areaType === 'region' || !w.areaType);
+  const sourceWarnings =
+    prefWarnings.length > 0
+      ? prefWarnings
+      : validWarnings.filter(w => w.areaType === 'region' || !w.areaType);
 
   const groupedByArea: Record<
     string,
@@ -127,73 +156,75 @@ export function buildTelopQueue(
   }
 
   for (const group of Object.values(groupedByArea)) {
-    const hasSpecial = group.entries.some(e => e.warningLevel === 'level_5' || e.warningLevel === 'special');
-    const hasWarning = group.entries.some(
+    const filteredEntries = group.entries
+      .filter(e => {
+        if (e.warningLevel === 'level_5' || e.warningLevel === 'special')
+          return config.info.enableSpecialWarning;
+        if (e.warningLevel === 'level_4' || e.warningLevel === 'level_3' || e.warningLevel === 'warning')
+          return config.info.enableWarning;
+        if (e.warningLevel === 'level_2' || e.warningLevel === 'advisory')
+          return config.info.enableAdvisory;
+        return true;
+      })
+      .sort(
+        (a, b) => getWarningEntryPriorityRank(a.warningLevel) - getWarningEntryPriorityRank(b.warningLevel)
+      );
+
+    if (filteredEntries.length === 0) continue;
+
+    const hasSpecial = filteredEntries.some(e => e.warningLevel === 'level_5' || e.warningLevel === 'special');
+    const hasWarning = filteredEntries.some(
       e => e.warningLevel === 'level_4' || e.warningLevel === 'level_3' || e.warningLevel === 'warning'
     );
-    const hasAdvisory = group.entries.some(e => e.warningLevel === 'level_2' || e.warningLevel === 'advisory');
 
     let topCategory: TelopCategory = 'advisory';
-    let categoryLabel = '気象注意報';
     let sidebarTitle = '気象注意報';
-    let colorPair = config.colors.warningLevels.advisory;
 
     if (hasSpecial) {
-      if (!config.info.enableSpecialWarning) continue;
       topCategory = 'special_warning';
-      categoryLabel = '特別警報';
       sidebarTitle = '特別警報';
-      colorPair = config.colors.warningLevels.special;
     } else if (hasWarning) {
-      if (!config.info.enableWarning) continue;
       topCategory = 'warning';
-      categoryLabel = '気象警報';
       sidebarTitle = '気象警報';
-      const isLv4 = group.entries.some(e => e.warningLevel === 'level_4');
-      colorPair = isLv4 ? config.colors.warningLevels.level4 : config.colors.warningLevels.warning;
-    } else if (hasAdvisory) {
-      if (!config.info.enableAdvisory) continue;
-      topCategory = 'advisory';
-      categoryLabel = '気象注意報';
-      sidebarTitle = '気象注意報';
-      colorPair = config.colors.warningLevels.advisory;
-    } else {
-      continue;
     }
 
     const rule = getPriorityRule(config, topCategory);
     if (!rule.enabled) continue;
+    if (!isWithinHours(group.reportDateTime, config.info.warningMaxAgeHours)) continue;
     if (!isWithinDuration(group.reportDateTime, rule.durationSec)) continue;
 
-    // フィルタ設定に応じて有効なレベルの警報・注意報名称を気象庁発表のまま結合
-    const filteredEntries = group.entries.filter(e => {
-      if (e.warningLevel === 'level_5' || e.warningLevel === 'special') return config.info.enableSpecialWarning;
-      if (e.warningLevel === 'level_4' || e.warningLevel === 'level_3' || e.warningLevel === 'warning') return config.info.enableWarning;
-      if (e.warningLevel === 'level_2' || e.warningLevel === 'advisory') return config.info.enableAdvisory;
-      return true;
+    // 各警報・注意報ごとのクロスディゾルブ用バッジ一覧を生成
+    const tickerBadges: TickerBadgeInfo[] = filteredEntries.map(e => {
+      const c = getWarningEntryColor(e.warningLevel, config);
+      return {
+        label: cleanWarningLabel(e.warningName),
+        subLabel: group.area,
+        bgColor: c.bg,
+        textColor: c.text,
+      };
     });
 
-    if (filteredEntries.length === 0) continue;
-
+    const primaryBadge = tickerBadges[0];
     const namesText = filteredEntries.map(e => e.warningName).join('・');
     const headlineText = `【${group.area}】${namesText} 発表中`;
 
     items.push({
       id: `warn-${group.area}-${group.reportDateTime}`,
       category: topCategory,
-      categoryLabel,
+      categoryLabel: primaryBadge.label,
       sidebarTitle,
       headlineText,
       subText: namesText,
       badgeText: group.area,
-      bgColor: colorPair.bg,
-      textColor: colorPair.text,
+      bgColor: primaryBadge.bgColor,
+      textColor: primaryBadge.textColor,
       priority: rule.priority,
       timestamp: group.reportDateTime,
       office: group.office || '気象庁発表',
       areaName: group.area,
       rawType: 'warning',
       rawData: group,
+      tickerBadges,
     });
   }
 
@@ -215,6 +246,7 @@ export function buildTelopQueue(
               return false;
             }
           }
+          if (!isWithinHours(eq.originTime, config.info.earthquakeMaxAgeHours)) return false;
           if (!isWithinDuration(eq.originTime, eqRule.durationSec)) return false;
           return true;
         })
@@ -250,6 +282,14 @@ export function buildTelopQueue(
           areaName: eq.hypocenterName,
           rawType: 'earthquake',
           rawData: eq,
+          tickerBadges: [
+            {
+              label: '地震情報',
+              subLabel: `最大震度 ${formattedInt}`,
+              bgColor: seismicColor.bg,
+              textColor: seismicColor.text,
+            },
+          ],
         });
       }
     }
@@ -300,6 +340,14 @@ export function buildTelopQueue(
           areaName: cur.location || '',
           rawType: 'typhoon',
           rawData: ty,
+          tickerBadges: [
+            {
+              label: `台風第${typhoonNum}号`,
+              subLabel: cur.intensityClass || ty.name || '台風情報',
+              bgColor: '#0284C7',
+              textColor: '#FFFFFF',
+            },
+          ],
         });
       }
     }
@@ -324,6 +372,13 @@ export function buildTelopQueue(
           timestamp: new Date().toISOString(),
           office: '気象庁発表',
           rawType: 'custom',
+          tickerBadges: [
+            {
+              label: msg.categoryLabel || 'お知らせ',
+              bgColor: msg.color || '#2563EB',
+              textColor: msg.textColor || '#FFFFFF',
+            },
+          ],
         });
       }
     }
@@ -344,9 +399,9 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
         {
           id: 'test-special-warning',
           category: 'special_warning',
-          categoryLabel: '特別警報',
+          categoryLabel: '大雨特別警報',
           sidebarTitle: '特別警報',
-          headlineText: '【気象特別警報・テスト】東京都・神奈川県に大雨特別警報が発表されています。最大級の警戒をしてください。（気象庁発表）',
+          headlineText: '【気象特別警報・テスト】東京都・神奈川県に大雨特別警報・暴風特別警報が発表されています。最大級の警戒をしてください。（気象庁発表）',
           badgeText: '大雨特別警報',
           bgColor: config.colors.warningLevels.special.bg,
           textColor: config.colors.warningLevels.special.text,
@@ -355,6 +410,20 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           office: '気象庁発表',
           areaName: '東京都・神奈川県',
           rawType: 'test',
+          tickerBadges: [
+            {
+              label: '大雨特別警報',
+              subLabel: '東京都・神奈川県',
+              bgColor: config.colors.warningLevels.special.bg,
+              textColor: config.colors.warningLevels.special.text,
+            },
+            {
+              label: '暴風特別警報',
+              subLabel: '東京都・神奈川県',
+              bgColor: config.colors.warningLevels.special.bg,
+              textColor: config.colors.warningLevels.special.text,
+            },
+          ],
         },
       ];
     case 'warning':
@@ -362,7 +431,7 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
         {
           id: 'test-warning',
           category: 'warning',
-          categoryLabel: '気象警報',
+          categoryLabel: '大雨警報',
           sidebarTitle: '気象警報',
           headlineText: '【東京都気象警報・注意報】東京地方では、大雨警報・洪水警報・雷注意報が発表されています。低い土地の浸水や河川の増水に警戒してください。',
           badgeText: '大雨・洪水警報',
@@ -373,6 +442,26 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           office: '気象庁発表',
           areaName: '東京都',
           rawType: 'test',
+          tickerBadges: [
+            {
+              label: '大雨警報',
+              subLabel: '東京都',
+              bgColor: config.colors.warningLevels.warning.bg,
+              textColor: config.colors.warningLevels.warning.text,
+            },
+            {
+              label: '洪水警報',
+              subLabel: '東京都',
+              bgColor: config.colors.warningLevels.warning.bg,
+              textColor: config.colors.warningLevels.warning.text,
+            },
+            {
+              label: '雷注意報',
+              subLabel: '東京都',
+              bgColor: config.colors.warningLevels.advisory.bg,
+              textColor: config.colors.warningLevels.advisory.text,
+            },
+          ],
         },
       ];
     case 'eq_4': {
@@ -401,6 +490,14 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
             lat: 35.68,
             lon: 140.12,
           },
+          tickerBadges: [
+            {
+              label: '地震情報',
+              subLabel: '最大震度 4',
+              bgColor: c4.bg,
+              textColor: c4.text,
+            },
+          ],
         },
       ];
     }
@@ -430,6 +527,14 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
             lat: 31.8,
             lon: 131.7,
           },
+          tickerBadges: [
+            {
+              label: '地震情報',
+              subLabel: '最大震度 6強',
+              bgColor: c6.bg,
+              textColor: c6.text,
+            },
+          ],
         },
       ];
     }
@@ -496,6 +601,14 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
               },
             ],
           },
+          tickerBadges: [
+            {
+              label: '台風第5号',
+              subLabel: '大型・強い',
+              bgColor: '#0284C7',
+              textColor: '#FFFFFF',
+            },
+          ],
         },
       ];
     case 'tsunami':
@@ -514,6 +627,14 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           office: '気象庁発表',
           areaName: '太平洋沿岸',
           rawType: 'test',
+          tickerBadges: [
+            {
+              label: '津波警報',
+              subLabel: '太平洋沿岸',
+              bgColor: config.colors.tsunami.warning.bg,
+              textColor: config.colors.tsunami.warning.text,
+            },
+          ],
         },
       ];
     case 'volcano':
@@ -532,6 +653,14 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           office: '気象庁発表',
           areaName: '桜島',
           rawType: 'test',
+          tickerBadges: [
+            {
+              label: '噴火警報',
+              subLabel: '桜島 レベル3',
+              bgColor: '#D97706',
+              textColor: '#FFFFFF',
+            },
+          ],
         },
       ];
     case 'tornado':
@@ -550,10 +679,17 @@ export function getTestPresetItems(presetKey: string, config: LTelopConfig): Tel
           office: '気象庁発表',
           areaName: '埼玉県・東京都',
           rawType: 'test',
+          tickerBadges: [
+            {
+              label: '竜巻注意情報',
+              subLabel: '埼玉県・東京都',
+              bgColor: '#E11D48',
+              textColor: '#FFFFFF',
+            },
+          ],
         },
       ];
     default:
       return [];
   }
 }
-
